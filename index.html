@@ -1090,18 +1090,18 @@ function App(){
   useEffect(()=>{
     const tryInit=()=>{
       if(initGIS()){
-        /* First load: get token silently, then load from Sheets */
-        _tokenCallback=()=>{
-          _tokenCallback=null;
-          loadFromSheets();
-        };
-        tokenClient.requestAccessToken({prompt:''});
+        /* Load from localStorage immediately — no silent popup */
+        const cached=lsGet('cvdata2026');
+        const cachedRates=lsGet('cvrates2026');
+        setMonths(cached||INIT);
+        if(cachedRates) setRates(cachedRates);
+        setAuthState('offline');
       } else {
         setTimeout(tryInit,300);
       }
     };
     tryInit();
-  },[]); /* run once on mount */
+  },[]);
 
   /* ---- SAVE (debounced 800ms) ---- */
   const save=useCallback((data,r)=>{
@@ -1141,41 +1141,36 @@ function App(){
   };
 
   const handleLogin=()=>{
-    if(!tokenClient){
-      /* GIS not loaded yet — try to init */
-      if(initGIS()) handleLogin();
-      else{alert('Cargando Google... intente en un momento.');return;}
-      return;
-    }
-    /* On reconnect: just get a fresh token, then resume syncing */
+    if(!tokenClient){alert('Cargando Google... intente en un momento.');return;}
     _tokenCallback=()=>{
       _tokenCallback=null;
-      setAuthState('ready');
-      /* Write current local state to Sheets with new token */
-      const cur=lsGet('cvdata2026');
-      const curR=lsGet('cvrates2026');
-      if(cur) sheetsWrite(cur, curR||rates)
-        .then(()=>setSyncStatus('synced'))
-        .catch(()=>setSyncStatus('error'));
+      /* Load fresh data from Sheets */
+      sheetsRead().then(result=>{
+        if(result){
+          setMonths(result.months);
+          setRates(result.rates);
+          lsSet('cvdata2026',result.months);
+          lsSet('cvrates2026',result.rates);
+        } else {
+          /* Sheets vacíos — subir datos locales */
+          const cur=lsGet('cvdata2026')||INIT;
+          sheetsWrite(cur,rates);
+        }
+        setAuthState('ready');
+        setSyncStatus('synced');
+        setTimeout(()=>setSyncStatus(''),2500);
+      }).catch(()=>{
+        setAuthState('ready'); /* token ok, sheets falló */
+        setSyncStatus('error');
+      });
     };
-    tokenClient.requestAccessToken({prompt:''});
+    tokenClient.requestAccessToken({prompt:'select_account'});
   };
 
-  /* ---- LOADING SCREEN ---- */
+  /* ---- LOADING SCREEN — solo mientras inicializa JS ---- */
   if(!months) return(
-    <div style={{display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',height:'100vh',gap:20,background:'#f8fafc'}}>
-      <div style={{width:48,height:48,borderRadius:12,background:BLUE,display:'flex',alignItems:'center',justifyContent:'center',fontSize:24}}>📊</div>
-      <div style={{fontSize:16,fontWeight:600,color:'#0f172a'}}>Control de Ventas 2026</div>
-      {authState==='connecting'
-        ? <div style={{fontSize:13,color:'#64748b'}}>Conectando con Google Sheets...</div>
-        : <div style={{display:'flex',flexDirection:'column',alignItems:'center',gap:12}}>
-            <div style={{fontSize:13,color:'#64748b'}}>Inicie sesión para sincronizar con Google Sheets</div>
-            <button onClick={handleLogin} style={{display:'flex',alignItems:'center',gap:10,padding:'10px 20px',borderRadius:8,border:'1px solid #e2e8f0',background:'white',cursor:'pointer',fontSize:14,fontWeight:600,color:'#0f172a',boxShadow:'0 1px 3px rgba(0,0,0,0.08)'}}>
-              <svg width="18" height="18" viewBox="0 0 18 18"><path d="M16.51 8H8.98v3h4.3c-.18 1-.74 1.48-1.6 2.04v2.01h2.6a7.8 7.8 0 0 0 2.38-5.88c0-.57-.05-.66-.15-1.18z" fill="#4285F4"/><path d="M8.98 17c2.16 0 3.97-.72 5.3-1.94l-2.6-2a4.8 4.8 0 0 1-7.18-2.54H1.83v2.07A8 8 0 0 0 8.98 17z" fill="#34A853"/><path d="M4.5 10.52a4.8 4.8 0 0 1 0-3.04V5.41H1.83a8 8 0 0 0 0 7.18l2.67-2.07z" fill="#FBBC05"/><path d="M8.98 4.18c1.17 0 2.23.4 3.06 1.2l2.3-2.3A8 8 0 0 0 1.83 5.4L4.5 7.48a4.77 4.77 0 0 1 4.48-3.3z" fill="#EA4335"/></svg>
-              Conectar con Google
-            </button>
-          </div>
-      }
+    <div style={{display:'flex',alignItems:'center',justifyContent:'center',height:'100vh',color:'#94a3b8',fontSize:14}}>
+      Cargando...
     </div>
   );
 
@@ -1186,13 +1181,14 @@ function App(){
   /* Sync indicator */
   const SyncDot=()=>{
     if(authState==='offline') return(
-      <button onClick={handleLogin} style={{fontSize:11,background:'rgba(255,255,255,0.15)',border:'1px solid rgba(255,255,255,0.3)',borderRadius:4,color:'white',cursor:'pointer',padding:'2px 8px',display:'flex',alignItems:'center',gap:4}}>
-        ⚠️ sin conexión · <span style={{textDecoration:'underline'}}>Reconectar</span>
+      <button onClick={handleLogin} style={{display:'flex',alignItems:'center',gap:6,padding:'5px 12px',borderRadius:6,border:'1px solid rgba(255,255,255,0.4)',background:'rgba(255,255,255,0.18)',color:'white',cursor:'pointer',fontSize:12,fontWeight:600}}>
+        <svg width="14" height="14" viewBox="0 0 18 18"><path d="M16.51 8H8.98v3h4.3c-.18 1-.74 1.48-1.6 2.04v2.01h2.6a7.8 7.8 0 0 0 2.38-5.88c0-.57-.05-.66-.15-1.18z" fill="white"/><path d="M8.98 17c2.16 0 3.97-.72 5.3-1.94l-2.6-2a4.8 4.8 0 0 1-7.18-2.54H1.83v2.07A8 8 0 0 0 8.98 17z" fill="white"/><path d="M4.5 10.52a4.8 4.8 0 0 1 0-3.04V5.41H1.83a8 8 0 0 0 0 7.18l2.67-2.07z" fill="white"/><path d="M8.98 4.18c1.17 0 2.23.4 3.06 1.2l2.3-2.3A8 8 0 0 0 1.83 5.4L4.5 7.48a4.77 4.77 0 0 1 4.48-3.3z" fill="white"/></svg>
+        Conectar Google
       </button>
     );
     if(syncStatus==='syncing') return <span style={{fontSize:10,opacity:0.8}}>⟳ guardando...</span>;
     if(syncStatus==='synced') return <span style={{fontSize:10,opacity:0.8}}>✓ Google Sheets</span>;
-    if(syncStatus==='error') return <button onClick={handleLogin} style={{fontSize:10,opacity:0.9,background:'none',border:'none',color:'#fca5a5',cursor:'pointer'}}>⚠️ error · Reconectar</button>;
+    if(syncStatus==='error') return <button onClick={handleLogin} style={{fontSize:11,background:'none',border:'none',color:'#fca5a5',cursor:'pointer',padding:0}}>⚠️ error · Reconectar</button>;
     return <span style={{fontSize:10,opacity:0.6}}>● Google Sheets</span>;
   };
 
