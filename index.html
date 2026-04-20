@@ -4,6 +4,7 @@
 <meta charset="UTF-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
 <title>Control de Ventas 2026 — Seguros del INS</title>
+<link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%230369a1'/%3E%3Crect x='7' y='17' width='4' height='9' rx='1' fill='%23fff'/%3E%3Crect x='14' y='11' width='4' height='15' rx='1' fill='%23fff'/%3E%3Crect x='21' y='7' width='4' height='19' rx='1' fill='%23fff'/%3E%3C/svg%3E"/>
 <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
 <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
 <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
@@ -1154,13 +1155,27 @@ function App(){
         } else {
           /* Sheets vacíos — subir datos locales */
           const cur=lsGet('cvdata2026')||INIT;
-          sheetsWrite(cur,rates);
+          return sheetsWrite(cur,rates);
         }
+      }).then(()=>{
         setAuthState('ready');
         setSyncStatus('synced');
         setTimeout(()=>setSyncStatus(''),2500);
-      }).catch(()=>{
-        setAuthState('ready'); /* token ok, sheets falló */
+      }).catch(err=>{
+        console.error('Sheets error:',err);
+        const msg=String(err.message||err);
+        let userMsg='Error al conectar con Google Sheets.\n\n';
+        if(msg.includes('Sheets API has not been used')||msg.includes('API has not been enabled')||msg.includes('SERVICE_DISABLED')){
+          userMsg+='⚠️ Falta habilitar la Google Sheets API en su proyecto de Google Cloud.\n\nSolución:\n1. Vaya a https://console.cloud.google.com\n2. Seleccione el proyecto "Sistema-Seguros-Vencimientos"\n3. APIs & Services → Library\n4. Busque "Google Sheets API" → Habilitar';
+        } else if(msg.includes('PERMISSION_DENIED')||msg.includes('403')){
+          userMsg+='⚠️ Permisos insuficientes. Verifique que la cuenta de Google tenga acceso al Sheet.';
+        } else if(msg.includes('NOT_FOUND')||msg.includes('404')){
+          userMsg+='⚠️ No se encontró el Sheet. Verifique el ID.';
+        } else {
+          userMsg+='Detalles técnicos:\n'+msg.slice(0,400);
+        }
+        alert(userMsg);
+        setAuthState('offline');
         setSyncStatus('error');
       });
     };
