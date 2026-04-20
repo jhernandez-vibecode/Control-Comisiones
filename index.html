@@ -35,6 +35,13 @@ const nextId=()=>Date.now().toString(36)+Math.random().toString(36).slice(2,5);
 const fmtN=(n)=>Math.round(n||0).toLocaleString('es-CR');
 const calcCom=(prima,linea,rates)=>Number(prima||0)*((rates||DEFAULT_COM)[linea]||0.15);
 const LINEA_COLORS={AUTOMOVILES:'#0369a1','RT CONSTRUCCIÓN':'#7c3aed','Viajero Asistencia':'#059669','Estudiantil Individual':'#d97706','EQUIPO CONTRATISTA':'#dc2626','INS MEDICAL':'#db2777','HOGAR COMPRENSIVO':'#0891b2',OTROS:'#6b7280'};
+/* Quincena: auto-detect from name, or use stored value */
+const getQ=(v)=>v.q||((/IIQ/i.test(v.c))?'IIQ':(/\bIQ\b/i.test(v.c))?'IQ':'');
+const QBadge=({q})=>{
+  if(!q) return <span style={{fontSize:10,color:'#cbd5e1'}}>—</span>;
+  const isI=q==='IQ';
+  return <span style={{fontSize:10,padding:'2px 6px',borderRadius:8,fontWeight:700,background:isI?'#eff6ff':'#fdf4ff',color:isI?'#1d4ed8':'#7e22ce',border:`1px solid ${isI?'#bfdbfe':'#e9d5ff'}`}}>{q}</span>;
+};
 
 /* ================================================================
    GOOGLE SHEETS PERSISTENCE
@@ -68,13 +75,13 @@ async function gFetch(url,opts={}){
 
 /* Build flat rows from months state */
 function monthsToRows(months,rates){
-  const vH=['MES','ID','CLIENTE','LINEA','FORMA','PRIMA','REFERENCIA'];
+  const vH=['MES','ID','CLIENTE','LINEA','FORMA','PRIMA','REFERENCIA','QUINCENA'];
   const iH=['MES','ID','FECHA','COLONES','DOLARES'];
   const cH=['MES','TC','LINEA','TASA'];
   const vRows=[vH],iRows=[iH],cRows=[cH];
   MESES.forEach(m=>{
     const d=months[m]||{ventas:[],inv:[],tc:505};
-    (d.ventas||[]).forEach(v=>vRows.push([m,v.id,v.c,v.l,v.f,Number(v.p||0),v.v]));
+    (d.ventas||[]).forEach(v=>vRows.push([m,v.id,v.c,v.l,v.f,Number(v.p||0),v.v,getQ(v)]));
     (d.inv||[]).forEach(r=>iRows.push([m,r.id,r.fecha,Number(r.col||0),Number(r.usd||0)]));
   });
   MESES.forEach((m,i)=>{
@@ -93,8 +100,8 @@ function rowsToMonths(vRows,iRows,cRows){
   const rates={...DEFAULT_COM};
   /* ventas */
   vRows.slice(1).forEach(r=>{
-    const [mes,id,c,l,f,p,v]=r;
-    if(mes&&id&&d[mes]) d[mes].ventas.push({id,c,l,f,p:Number(p)||0,v});
+    const [mes,id,c,l,f,p,v,q]=r;
+    if(mes&&id&&d[mes]) d[mes].ventas.push({id,c,l,f,p:Number(p)||0,v,q:q||''});
   });
   /* inversion */
   iRows.slice(1).forEach(r=>{
@@ -401,9 +408,11 @@ function TasasModal({rates,onSave,onClose}){
 }
 
 function VentaModal({venta,onSave,onDelete,onClose,rates}){
-  const [form,setForm]=useState(venta||{c:'',l:'AUTOMOVILES',f:'ANUAL',p:'',v:'WEB'});
+  const [form,setForm]=useState(venta||{c:'',l:'AUTOMOVILES',f:'ANUAL',p:'',v:'WEB',q:''});
   const set=(k,v)=>setForm(prev=>({...prev,[k]:v}));
   const com=calcCom(Number(form.p||0),form.l,rates);
+  /* Auto-detect Q from name if not manually set */
+  const autoQ=getQ(form);
   return(
     <Modal title={venta?'Editar venta':'Nueva venta'} onClose={onClose}>
       <div style={{marginBottom:14}}>
@@ -420,7 +429,24 @@ function VentaModal({venta,onSave,onDelete,onClose,rates}){
         <div><label style={{fontSize:12,color:'#64748b',display:'block',marginBottom:4}}>Referencia</label>
           <select style={inS} value={form.v} onChange={e=>set('v',e.target.value)}>{VENDEDORES.map(v=><option key={v}>{v}</option>)}</select></div>
       </div>
-      <div style={{background:'#f0f9ff',border:'1px solid #bae6fd',borderRadius:8,padding:'10px 14px',margin:'14px 0',display:'flex',justifyContent:'space-between',alignItems:'center'}}>
+      {/* Quincena selector */}
+      <div style={{margin:'12px 0',display:'flex',alignItems:'center',gap:10}}>
+        <label style={{fontSize:12,color:'#64748b',whiteSpace:'nowrap'}}>Quincena:</label>
+        {['IQ','IIQ',''].map(q=>(
+          <button key={q||'none'} onClick={()=>set('q',q)} style={{
+            padding:'5px 14px',borderRadius:20,fontSize:12,fontWeight:600,cursor:'pointer',
+            border: (form.q===q||(form.q===''&&q===autoQ&&!form.q&&q!==''))
+              ?`2px solid ${q==='IQ'?'#1d4ed8':q==='IIQ'?'#7e22ce':'#94a3b8'}`
+              :'1px solid #e2e8f0',
+            background: form.q===q?(q==='IQ'?'#eff6ff':q==='IIQ'?'#fdf4ff':'#f8fafc'):'white',
+            color: form.q===q?(q==='IQ'?'#1d4ed8':q==='IIQ'?'#7e22ce':'#64748b'):'#94a3b8'
+          }}>
+            {q||'Sin clasificar'}
+          </button>
+        ))}
+        {autoQ&&!form.q&&<span style={{fontSize:11,color:'#94a3b8'}}>auto: {autoQ}</span>}
+      </div>
+      <div style={{background:'#f0f9ff',border:'1px solid #bae6fd',borderRadius:8,padding:'10px 14px',margin:'8px 0 14px',display:'flex',justifyContent:'space-between',alignItems:'center'}}>
         <span style={{fontSize:12,color:'#0369a1'}}>Ingresos WEB — tasa {((rates[form.l]||0.15)*100).toFixed(1)}%</span>
         <span style={{fontSize:17,fontWeight:700,color:BLUE}}>₡{fmtN(com)}</span>
       </div>
@@ -428,7 +454,7 @@ function VentaModal({venta,onSave,onDelete,onClose,rates}){
         {venta&&<button onClick={()=>onDelete(venta.id)} style={{padding:'8px 16px',borderRadius:6,border:'1px solid #fca5a5',background:'#fef2f2',color:'#dc2626',cursor:'pointer',fontSize:13}}>Eliminar</button>}
         <div style={{display:'flex',gap:10,marginLeft:'auto'}}>
           <button onClick={onClose} style={{padding:'8px 16px',borderRadius:6,border:'1px solid #e2e8f0',background:'none',cursor:'pointer',fontSize:13,color:'#64748b'}}>Cancelar</button>
-          <button onClick={()=>onSave({...form,id:venta?.id||nextId(),p:Number(form.p||0)})} style={{padding:'8px 20px',borderRadius:6,border:'none',background:BLUE,color:'white',cursor:'pointer',fontSize:13,fontWeight:700}}>Guardar</button>
+          <button onClick={()=>onSave({...form,id:venta?.id||nextId(),p:Number(form.p||0),q:form.q||autoQ})} style={{padding:'8px 20px',borderRadius:6,border:'none',background:BLUE,color:'white',cursor:'pointer',fontSize:13,fontWeight:700}}>Guardar</button>
         </div>
       </div>
     </Modal>
@@ -539,14 +565,15 @@ function MonthView({mes,data,updateMonths,rates}){
           </div>
           <div style={{overflowX:'auto'}}>
             <table style={{width:'100%',borderCollapse:'collapse',minWidth:620}}>
-              <thead><tr>{['#','Cliente','Línea','F. Pago','Prima','Ref.','Ing. WEB'].map(h=><th key={h} style={th}>{h}</th>)}</tr></thead>
+              <thead><tr>{['#','Q','Cliente','Línea','F. Pago','Prima','Ref.','Ing. WEB'].map(h=><th key={h} style={th}>{h}</th>)}</tr></thead>
               <tbody>
                 {ventas.map((v,i)=>(
                   <tr key={v.id} onClick={()=>setVm(v)} style={{cursor:'pointer'}}
                     onMouseEnter={e=>e.currentTarget.style.background='#f8fafc'}
                     onMouseLeave={e=>e.currentTarget.style.background='transparent'}>
                     <td style={{...td,color:'#94a3b8',width:30,fontSize:11}}>{i+1}</td>
-                    <td style={{...td,maxWidth:0,width:'35%'}}><div style={{overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{v.c}</div></td>
+                    <td style={{...td,width:44,textAlign:'center'}}><QBadge q={getQ(v)}/></td>
+                    <td style={{...td,maxWidth:0,width:'33%'}}><div style={{overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{v.c}</div></td>
                     <td style={td}><Badge text={v.l}/></td>
                     <td style={{...td,color:'#64748b',fontSize:12}}>{v.f}</td>
                     <td style={{...td,textAlign:'right',fontFamily:'monospace',fontSize:12}}>₡{fmtN(v.p)}</td>
@@ -554,14 +581,34 @@ function MonthView({mes,data,updateMonths,rates}){
                     <td style={{...td,textAlign:'right',fontFamily:'monospace',fontSize:12,color:BLUE,fontWeight:600}}>₡{fmtN(calcCom(v.p,v.l,rates))}</td>
                   </tr>
                 ))}
-                {ventas.length===0&&<tr><td colSpan={7} style={{...td,textAlign:'center',color:'#94a3b8',padding:'2.5rem',fontSize:14}}>Sin registros. Haga clic en "+ Agregar".</td></tr>}
+                {ventas.length===0&&<tr><td colSpan={8} style={{...td,textAlign:'center',color:'#94a3b8',padding:'2.5rem',fontSize:14}}>Sin registros. Haga clic en "+ Agregar".</td></tr>}
               </tbody>
-              <tfoot><tr>
-                <td colSpan={4} style={{...tot,color:'#64748b'}}>Total {mes}</td>
-                <td style={{...tot,textAlign:'right',fontFamily:'monospace'}}>₡{fmtN(totalP)}</td>
-                <td style={tot}></td>
-                <td style={{...tot,textAlign:'right',fontFamily:'monospace',color:BLUE}}>₡{fmtN(totalCom)}</td>
-              </tr></tfoot>
+              <tfoot>
+                {/* Quincena subtotals */}
+                {['IQ','IIQ'].map(q=>{
+                  const qVentas=ventas.filter(v=>getQ(v)===q);
+                  if(qVentas.length===0) return null;
+                  const qP=qVentas.reduce((s,v)=>s+Number(v.p||0),0);
+                  const qC=qVentas.reduce((s,v)=>s+calcCom(Number(v.p||0),v.l,rates),0);
+                  return(
+                    <tr key={q}>
+                      <td colSpan={2} style={{...tot,fontSize:11,color:q==='IQ'?'#1d4ed8':'#7e22ce',fontWeight:700,background:q==='IQ'?'#eff6ff':'#fdf4ff',borderTop:'none',paddingTop:5,paddingBottom:5}}>
+                        {q==='IQ'?'Primera quincena':'Segunda quincena'}
+                      </td>
+                      <td colSpan={3} style={{...tot,fontSize:11,color:'#64748b',background:q==='IQ'?'#eff6ff':'#fdf4ff',borderTop:'none',paddingTop:5,paddingBottom:5}}>{qVentas.length} pólizas</td>
+                      <td style={{...tot,textAlign:'right',fontFamily:'monospace',fontSize:11,background:q==='IQ'?'#eff6ff':'#fdf4ff',borderTop:'none',paddingTop:5,paddingBottom:5}}>₡{fmtN(qP)}</td>
+                      <td style={{...tot,background:q==='IQ'?'#eff6ff':'#fdf4ff',borderTop:'none',paddingTop:5,paddingBottom:5}}></td>
+                      <td style={{...tot,textAlign:'right',fontFamily:'monospace',fontSize:11,color:BLUE,background:q==='IQ'?'#eff6ff':'#fdf4ff',borderTop:'none',paddingTop:5,paddingBottom:5}}>₡{fmtN(qC)}</td>
+                    </tr>
+                  );
+                })}
+                <tr>
+                  <td colSpan={5} style={{...tot,color:'#64748b'}}>Total {mes}</td>
+                  <td style={{...tot,textAlign:'right',fontFamily:'monospace'}}>₡{fmtN(totalP)}</td>
+                  <td style={tot}></td>
+                  <td style={{...tot,textAlign:'right',fontFamily:'monospace',color:BLUE}}>₡{fmtN(totalCom)}</td>
+                </tr>
+              </tfoot>
             </table>
           </div>
         </div>
@@ -1118,10 +1165,14 @@ function App(){
 
   /* Sync indicator */
   const SyncDot=()=>{
-    if(authState==='offline') return <span style={{fontSize:10,opacity:0.8,color:'#fcd34d'}}>⚠️ sin conexión · local</span>;
+    if(authState==='offline') return(
+      <button onClick={handleLogin} style={{fontSize:11,background:'rgba(255,255,255,0.15)',border:'1px solid rgba(255,255,255,0.3)',borderRadius:4,color:'white',cursor:'pointer',padding:'2px 8px',display:'flex',alignItems:'center',gap:4}}>
+        ⚠️ sin conexión · <span style={{textDecoration:'underline'}}>Reconectar</span>
+      </button>
+    );
     if(syncStatus==='syncing') return <span style={{fontSize:10,opacity:0.8}}>⟳ guardando...</span>;
     if(syncStatus==='synced') return <span style={{fontSize:10,opacity:0.8}}>✓ Google Sheets</span>;
-    if(syncStatus==='error') return <span style={{fontSize:10,opacity:0.8,color:'#fca5a5'}}>⚠️ error al guardar</span>;
+    if(syncStatus==='error') return <button onClick={handleLogin} style={{fontSize:10,opacity:0.9,background:'none',border:'none',color:'#fca5a5',cursor:'pointer'}}>⚠️ error · Reconectar</button>;
     return <span style={{fontSize:10,opacity:0.6}}>● Google Sheets</span>;
   };
 
