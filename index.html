@@ -8,6 +8,7 @@
 <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
 <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+<script src="https://accounts.google.com/gsi/client" async></script>
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
 body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:#f8fafc}
@@ -35,13 +36,128 @@ const fmtN=(n)=>Math.round(n||0).toLocaleString('es-CR');
 const calcCom=(prima,linea,rates)=>Number(prima||0)*((rates||DEFAULT_COM)[linea]||0.15);
 const LINEA_COLORS={AUTOMOVILES:'#0369a1','RT CONSTRUCCIÓN':'#7c3aed','Viajero Asistencia':'#059669','Estudiantil Individual':'#d97706','EQUIPO CONTRATISTA':'#dc2626','INS MEDICAL':'#db2777','HOGAR COMPRENSIVO':'#0891b2',OTROS:'#6b7280'};
 
-const STORAGE_KEY='cvdata2026';
-const RATES_KEY='cvrates2026';
+/* ================================================================
+   GOOGLE SHEETS PERSISTENCE
+================================================================ */
+const SHEET_ID='1LNrqrA0IZICbTbnZY5yt4leFmGwFh5aCYqhEcba1vpI';
+const CLIENT_ID='446215450096-7aegmf643u1s5q9ob8f2i4cge3mvvd2g.apps.googleusercontent.com';
+const SCOPE='https://www.googleapis.com/auth/spreadsheets';
+let gToken=null;
+let tokenClient=null;
 
-/* ---- localStorage persistence (works in any browser) ---- */
+/* localStorage cache — fallback when offline / before login */
 const lsGet=(k)=>{try{const v=localStorage.getItem(k);return v?JSON.parse(v):null;}catch{return null;}};
 const lsSet=(k,v)=>{try{localStorage.setItem(k,JSON.stringify(v));}catch{}};
 
+function initTokenClient(callback){
+  tokenClient=window.google?.accounts?.oauth2?.initTokenClient({
+    client_id:CLIENT_ID,scope:SCOPE,
+    callback:(resp)=>{
+      if(resp.error){console.error('GIS error',resp);return;}
+      gToken=resp.access_token;
+      callback(resp.access_token);
+    }
+  });
+}
+
+async function gFetch(url,opts={}){
+  const resp=await fetch(url,{...opts,headers:{Authorization:`Bearer ${gToken}`,'Content-Type':'application/json',...(opts.headers||{})}});
+  if(!resp.ok){const t=await resp.text();throw new Error(t);}
+  return resp.json();
+}
+
+/* Build flat rows from months state */
+function monthsToRows(months,rates){
+  const vH=['MES','ID','CLIENTE','LINEA','FORMA','PRIMA','REFERENCIA'];
+  const iH=['MES','ID','FECHA','COLONES','DOLARES'];
+  const cH=['MES','TC','LINEA','TASA'];
+  const vRows=[vH],iRows=[iH],cRows=[cH];
+  MESES.forEach(m=>{
+    const d=months[m]||{ventas:[],inv:[],tc:505};
+    (d.ventas||[]).forEach(v=>vRows.push([m,v.id,v.c,v.l,v.f,Number(v.p||0),v.v]));
+    (d.inv||[]).forEach(r=>iRows.push([m,r.id,r.fecha,Number(r.col||0),Number(r.usd||0)]));
+  });
+  MESES.forEach((m,i)=>{
+    const tc=Number(months[m]?.tc)||505;
+    const linea=LINEAS[i]||'';
+    cRows.push([m,tc,linea,linea?(rates[linea]||0.15):'']);
+  });
+  for(let i=12;i<LINEAS.length;i++) cRows.push(['','',LINEAS[i],rates[LINEAS[i]]||0.15]);
+  return{vRows,iRows,cRows};
+}
+
+/* Parse flat rows back to months state */
+function rowsToMonths(vRows,iRows,cRows){
+  const d={};
+  MESES.forEach(m=>d[m]={ventas:[],inv:[],tc:505});
+  const rates={...DEFAULT_COM};
+  /* ventas */
+  vRows.slice(1).forEach(r=>{
+    const [mes,id,c,l,f,p,v]=r;
+    if(mes&&id&&d[mes]) d[mes].ventas.push({id,c,l,f,p:Number(p)||0,v});
+  });
+  /* inversion */
+  iRows.slice(1).forEach(r=>{
+    const [mes,id,fecha,col,usd]=r;
+    if(mes&&id&&d[mes]) d[mes].inv.push({id,fecha,col:Number(col)||0,usd:Number(usd)||0});
+  });
+  /* config: TC + tasas */
+  cRows.slice(1).forEach(r=>{
+    const [mes,tc,linea,tasa]=r;
+    if(mes&&d[mes]&&tc) d[mes].tc=Number(tc)||505;
+    if(linea&&tasa!==undefined&&tasa!=='') rates[linea]=Number(tasa)||0.15;
+  });
+  return{months:d,rates};
+}
+
+/* Ensure required sheets exist, creating them if needed */
+async function ensureSheets(){
+  const meta=await gFetch(`https://sheets.googleapis.com/v4/spreadsheets/${SHEET_ID}?fields=sheets.properties.title`);
+  const existing=(meta.sheets||[]).map(s=>s.properties.title);
+  const needed=['Ventas','Inversion','Config'];
+  const toCreate=needed.filter(n=>!existing.includes(n));
+  if(toCreate.length===0) return;
+  await gFetch(`https://sheets.googleapis.com/v4/spreadsheets/${SHEET_ID}:batchUpdate`,{
+    method:'POST',
+    body:JSON.stringify({requests:toCreate.map(title=>({addSheet:{properties:{title}}}))})
+  });
+}
+
+/* Read all data from Sheets */
+async function sheetsRead(){
+  await ensureSheets();
+  const ranges=['Ventas!A:G','Inversion!A:E','Config!A:D'];
+  const url=`https://sheets.googleapis.com/v4/spreadsheets/${SHEET_ID}/values:batchGet?`+ranges.map(r=>`ranges=${encodeURIComponent(r)}`).join('&');
+  const data=await gFetch(url);
+  const vr=data.valueRanges||[];
+  const vRows=vr[0]?.values||[];
+  const iRows=vr[1]?.values||[];
+  const cRows=vr[2]?.values||[];
+  /* If sheets are empty (just headers or nothing), return null so caller uses INIT */
+  const hasData=vRows.length>1||iRows.length>1;
+  if(!hasData) return null;
+  return rowsToMonths(vRows,iRows,cRows);
+}
+
+/* Write all data to Sheets (clear + rewrite) */
+async function sheetsWrite(months,rates){
+  await ensureSheets();
+  const {vRows,iRows,cRows}=monthsToRows(months,rates);
+  /* Clear first */
+  await gFetch(`https://sheets.googleapis.com/v4/spreadsheets/${SHEET_ID}/values:batchClear`,{
+    method:'POST',
+    body:JSON.stringify({ranges:['Ventas','Inversion','Config']})
+  });
+  /* Write new data */
+  await gFetch(`https://sheets.googleapis.com/v4/spreadsheets/${SHEET_ID}/values:batchUpdate`,{
+    method:'POST',
+    body:JSON.stringify({valueInputOption:'RAW',data:[
+      {range:'Ventas!A1',values:vRows},
+      {range:'Inversion!A1',values:iRows},
+      {range:'Config!A1',values:cRows}
+    ]})
+  });
+}
 const INIT=(()=>{
   const d={};
   MESES.forEach(m=>d[m]={ventas:[],inv:[],tc:505});
@@ -886,41 +1002,128 @@ function App(){
   const [months,setMonths]=useState(null);
   const [rates,setRates]=useState({...DEFAULT_COM});
   const [tab,setTab]=useState('Enero');
-  const [status,setStatus]=useState('');
   const [showTasas,setShowTasas]=useState(false);
   const [exporting,setExporting]=useState(false);
+  const [authState,setAuthState]=useState('idle'); /* idle | connecting | ready | offline */
+  const [syncStatus,setSyncStatus]=useState(''); /* '' | syncing | synced | error */
+  const saveTimer=React.useRef(null);
+
+  /* ---- AUTH + LOAD ---- */
+  const loadFromSheets=useCallback(async()=>{
+    setAuthState('connecting');
+    try{
+      const result=await sheetsRead();
+      if(result){
+        setMonths(result.months);
+        setRates(result.rates);
+        lsSet('cvdata2026',result.months);
+        lsSet('cvrates2026',result.rates);
+      } else {
+        /* Sheets are empty — write INIT data */
+        const cached=lsGet('cvdata2026');
+        const initData=cached||INIT;
+        setMonths(initData);
+        await sheetsWrite(initData,DEFAULT_COM);
+      }
+      setAuthState('ready');
+    }catch(e){
+      console.error('Sheets read error',e);
+      /* Fallback to localStorage */
+      const cached=lsGet('cvdata2026');
+      const cachedRates=lsGet('cvrates2026');
+      setMonths(cached||INIT);
+      if(cachedRates) setRates(cachedRates);
+      setAuthState('offline');
+    }
+  },[]);
 
   useEffect(()=>{
-    const sd=lsGet(STORAGE_KEY);
-    const sr=lsGet(RATES_KEY);
-    setMonths(sd||INIT);
-    if(sr) setRates(sr);
-  },[]);
+    /* Wait for GIS to load, then init token client */
+    const tryInit=()=>{
+      if(window.google?.accounts?.oauth2){
+        initTokenClient(()=>loadFromSheets());
+        /* Try silent token request — if user already authorized, this works instantly */
+        tokenClient.requestAccessToken({prompt:''});
+      } else {
+        setTimeout(tryInit,300);
+      }
+    };
+    tryInit();
+  },[loadFromSheets]);
 
+  /* ---- SAVE (debounced 800ms) ---- */
   const save=useCallback((data,r)=>{
-    setStatus('Guardando...');
-    lsSet(STORAGE_KEY,data);
-    if(r) lsSet(RATES_KEY,r);
-    setStatus('✓ Guardado');
-    setTimeout(()=>setStatus(''),2000);
-  },[]);
+    /* Always save to localStorage immediately */
+    lsSet('cvdata2026',data);
+    if(r) lsSet('cvrates2026',r);
+    /* Debounce Sheets write */
+    if(saveTimer.current) clearTimeout(saveTimer.current);
+    setSyncStatus('syncing');
+    saveTimer.current=setTimeout(async()=>{
+      if(!gToken){setSyncStatus('');return;}
+      try{
+        await sheetsWrite(data,r||rates);
+        setSyncStatus('synced');
+        setTimeout(()=>setSyncStatus(''),2500);
+      }catch(e){
+        console.error('Sheets write error',e);
+        setSyncStatus('error');
+        setTimeout(()=>setSyncStatus(''),4000);
+      }
+    },800);
+  },[rates]);
 
   const updateMonths=useCallback((upd)=>{
     setMonths(prev=>{const next=typeof upd==='function'?upd(prev):upd;save(next);return next;});
   },[save]);
 
-  const saveTasas=(nr)=>{setRates(nr);save(months,nr);setShowTasas(false);};
+  const saveTasas=(nr)=>{
+    setRates(nr);
+    save(months,nr);
+    setShowTasas(false);
+  };
 
   const handleExport=()=>{
     setExporting(true);
     setTimeout(()=>{try{exportToExcel(months,rates);}catch(e){alert('Error: '+e.message);}setExporting(false);},100);
   };
 
-  if(!months) return <div style={{display:'flex',alignItems:'center',justifyContent:'center',height:200,color:'#94a3b8',fontSize:14}}>Cargando...</div>;
+  const handleLogin=()=>{
+    if(!tokenClient){alert('Cargando Google... intente en un momento.');return;}
+    tokenClient.requestAccessToken({prompt:'consent'});
+    /* loadFromSheets is called in the callback */
+  };
+
+  /* ---- LOADING SCREEN ---- */
+  if(!months) return(
+    <div style={{display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',height:'100vh',gap:20,background:'#f8fafc'}}>
+      <div style={{width:48,height:48,borderRadius:12,background:BLUE,display:'flex',alignItems:'center',justifyContent:'center',fontSize:24}}>📊</div>
+      <div style={{fontSize:16,fontWeight:600,color:'#0f172a'}}>Control de Ventas 2026</div>
+      {authState==='connecting'
+        ? <div style={{fontSize:13,color:'#64748b'}}>Conectando con Google Sheets...</div>
+        : <div style={{display:'flex',flexDirection:'column',alignItems:'center',gap:12}}>
+            <div style={{fontSize:13,color:'#64748b'}}>Inicie sesión para sincronizar con Google Sheets</div>
+            <button onClick={handleLogin} style={{display:'flex',alignItems:'center',gap:10,padding:'10px 20px',borderRadius:8,border:'1px solid #e2e8f0',background:'white',cursor:'pointer',fontSize:14,fontWeight:600,color:'#0f172a',boxShadow:'0 1px 3px rgba(0,0,0,0.08)'}}>
+              <svg width="18" height="18" viewBox="0 0 18 18"><path d="M16.51 8H8.98v3h4.3c-.18 1-.74 1.48-1.6 2.04v2.01h2.6a7.8 7.8 0 0 0 2.38-5.88c0-.57-.05-.66-.15-1.18z" fill="#4285F4"/><path d="M8.98 17c2.16 0 3.97-.72 5.3-1.94l-2.6-2a4.8 4.8 0 0 1-7.18-2.54H1.83v2.07A8 8 0 0 0 8.98 17z" fill="#34A853"/><path d="M4.5 10.52a4.8 4.8 0 0 1 0-3.04V5.41H1.83a8 8 0 0 0 0 7.18l2.67-2.07z" fill="#FBBC05"/><path d="M8.98 4.18c1.17 0 2.23.4 3.06 1.2l2.3-2.3A8 8 0 0 0 1.83 5.4L4.5 7.48a4.77 4.77 0 0 1 4.48-3.3z" fill="#EA4335"/></svg>
+              Conectar con Google
+            </button>
+          </div>
+      }
+    </div>
+  );
 
   const totAnual=MESES.reduce((s,m)=>s+(months[m]?.ventas||[]).reduce((ss,v)=>ss+Number(v.p||0),0),0);
   const pct=Math.min(100,totAnual/META*100);
   const extraKeys=EXTRA_TABS.map(t=>t.key);
+
+  /* Sync indicator */
+  const SyncDot=()=>{
+    if(authState==='offline') return <span style={{fontSize:10,opacity:0.8,color:'#fcd34d'}}>⚠️ sin conexión · local</span>;
+    if(syncStatus==='syncing') return <span style={{fontSize:10,opacity:0.8}}>⟳ guardando...</span>;
+    if(syncStatus==='synced') return <span style={{fontSize:10,opacity:0.8}}>✓ Google Sheets</span>;
+    if(syncStatus==='error') return <span style={{fontSize:10,opacity:0.8,color:'#fca5a5'}}>⚠️ error al guardar</span>;
+    return <span style={{fontSize:10,opacity:0.6}}>● Google Sheets</span>;
+  };
 
   return(
     <div style={{minHeight:'100vh',background:'#f8fafc',fontFamily:'-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif'}}>
@@ -939,7 +1142,7 @@ function App(){
           </button>
           <div style={{textAlign:'right',marginLeft:4}}>
             <div style={{fontSize:13,fontWeight:700}}>{pct.toFixed(1)}% · ₡{fmtN(totAnual)}</div>
-            {status&&<div style={{fontSize:10,opacity:0.8}}>{status}</div>}
+            <SyncDot/>
           </div>
         </div>
       </div>
@@ -958,7 +1161,6 @@ function App(){
             </button>
           );
         })}
-        {/* Divider */}
         <div style={{width:1,background:'#f1f5f9',margin:'8px 4px'}}></div>
         {EXTRA_TABS.map(({key,label})=>{
           const active=tab===key;
@@ -969,11 +1171,11 @@ function App(){
           );
         })}
       </div>
-      {/* Content routing */}
+      {/* Content */}
       {tab==='Resumen'&&<ResumenView months={months} rates={rates}/>}
       {tab==='MetaViajero'&&<MetaViajeroView months={months} rates={rates}/>}
       {tab==='Estudiantil'&&<EstudiantilView months={months} rates={rates}/>}
-      {!extraKeys.includes(tab)&&<MonthView mes={tab} data={months[tab]||{ventas:[],inv:[]}} updateMonths={updateMonths} rates={rates}/>}
+      {!extraKeys.includes(tab)&&<MonthView mes={tab} data={months[tab]||{ventas:[],inv:[],tc:505}} updateMonths={updateMonths} rates={rates}/>}
       {showTasas&&<TasasModal rates={rates} onSave={saveTasas} onClose={()=>setShowTasas(false)}/>}
     </div>
   );
