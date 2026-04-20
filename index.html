@@ -1,19 +1,50 @@
-import { useState, useEffect, useCallback } from "react";
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>Control de Ventas 2026 — Seguros del INS</title>
+<script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+<script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+<script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:#f8fafc}
+input,select{font-family:inherit;outline:none}
+input:focus,select:focus{border-color:#0369a1!important;box-shadow:0 0 0 2px #0369a120}
+button{font-family:inherit}
+::-webkit-scrollbar{width:4px;height:4px}
+::-webkit-scrollbar-track{background:transparent}
+::-webkit-scrollbar-thumb{background:#cbd5e1;border-radius:2px}
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script type="text/babel">
+const {useState,useEffect,useCallback}=React;
+const MESES=['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
+const LINEAS=['AUTOMOVILES','RT CONSTRUCCIÓN','Viajero Asistencia','Estudiantil Individual','EQUIPO CONTRATISTA','INS MEDICAL','HOGAR COMPRENSIVO','OTROS'];
+const VENDEDORES=['WEB','CARTERA','ALTAMURA','OTRO'];
+const FORMAS=['ANUAL','SEMESTRAL','TRIMESTRAL','PC'];
+const DEFAULT_COM={AUTOMOVILES:0.15,'RT CONSTRUCCIÓN':0.10,'Viajero Asistencia':0.17,'Estudiantil Individual':0.185,'EQUIPO CONTRATISTA':0.16,'INS MEDICAL':0.16,'HOGAR COMPRENSIVO':0.21,OTROS:0.15};
+const META=1250000000;
+const BLUE='#0369a1';
+const nextId=()=>Date.now().toString(36)+Math.random().toString(36).slice(2,5);
+const fmtN=(n)=>Math.round(n||0).toLocaleString('es-CR');
+const calcCom=(prima,linea,rates)=>Number(prima||0)*((rates||DEFAULT_COM)[linea]||0.15);
+const LINEA_COLORS={AUTOMOVILES:'#0369a1','RT CONSTRUCCIÓN':'#7c3aed','Viajero Asistencia':'#059669','Estudiantil Individual':'#d97706','EQUIPO CONTRATISTA':'#dc2626','INS MEDICAL':'#db2777','HOGAR COMPRENSIVO':'#0891b2',OTROS:'#6b7280'};
 
-const MESES = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
-const LINEAS = ['AUTOMOVILES','RT CONSTRUCCIÓN','Viajero Asistencia','Estudiantil Individual','EQUIPO CONTRATISTA','INS MEDICAL','HOGAR COMPRENSIVO','OTROS'];
-const VENDEDORES = ['WEB','CARTERA','ALTAMURA','OTRO'];
-const FORMAS = ['ANUAL','SEMESTRAL','TRIMESTRAL','PC'];
-const COM = {AUTOMOVILES:0.15,'RT CONSTRUCCIÓN':0.10,'Viajero Asistencia':0.17,'Estudiantil Individual':0.185,'EQUIPO CONTRATISTA':0.16,'INS MEDICAL':0.16,'HOGAR COMPRENSIVO':0.21,OTROS:0.15};
-const META = 1_250_000_000;
-const BLUE = '#0369a1';
-const nextId = () => Date.now().toString(36)+Math.random().toString(36).slice(2,5);
-const fmtN = (n) => Math.round(n||0).toLocaleString('es-CR');
-const calcCom = (prima, linea) => Number(prima||0) * (COM[linea]||0.15);
+const STORAGE_KEY='cvdata2026';
+const RATES_KEY='cvrates2026';
 
-const INIT = (() => {
-  const d = {};
-  MESES.forEach(m => d[m]={ventas:[],inv:[]});
+/* ---- localStorage persistence (works in any browser) ---- */
+const lsGet=(k)=>{try{const v=localStorage.getItem(k);return v?JSON.parse(v):null;}catch{return null;}};
+const lsSet=(k,v)=>{try{localStorage.setItem(k,JSON.stringify(v));}catch{}};
+
+const INIT=(()=>{
+  const d={};
+  MESES.forEach(m=>d[m]={ventas:[],inv:[]});
   d.Enero.ventas=[
     {id:'e1a',c:'3-101-746921 S.A',l:'AUTOMOVILES',f:'SEMESTRAL',p:279977,v:'CARTERA'},
     {id:'e1b',c:'SOLANO BOLAÑOS HAZEL MARIA',l:'AUTOMOVILES',f:'TRIMESTRAL',p:149113,v:'WEB'},
@@ -151,35 +182,65 @@ const INIT = (() => {
   return d;
 })();
 
-const LINEA_COLORS = {
-  'AUTOMOVILES':'#0369a1','RT CONSTRUCCIÓN':'#7c3aed','Viajero Asistencia':'#059669',
-  'Estudiantil Individual':'#d97706','EQUIPO CONTRATISTA':'#dc2626','INS MEDICAL':'#db2777',
-  'HOGAR COMPRENSIVO':'#0891b2','OTROS':'#6b7280'
-};
+/* ---- EXPORT ---- */
+function exportToExcel(months,rates){
+  const wb=XLSX.utils.book_new();
+  MESES.forEach(mes=>{
+    const d=months[mes]||{ventas:[],inv:[]};
+    const ventas=d.ventas||[],inv=d.inv||[];
+    const rows=[['#','CLIENTE','LÍNEA','FORMA PAGO','PRIMA','REFERENCIA','INGRESOS WEB','','FECHA','COLONES','DÓLARES']];
+    const maxLen=Math.max(ventas.length,inv.length);
+    for(let i=0;i<maxLen;i++){
+      const v=ventas[i],r=inv[i];
+      rows.push([
+        v?i+1:'', v?v.c:'', v?v.l:'', v?v.f:'', v?Number(v.p||0):'', v?v.v:'', v?calcCom(v.p,v.l,rates):'',
+        '',
+        r?r.fecha:'', r?Number(r.col||0):'', r?Number(r.usd||0):''
+      ]);
+    }
+    const totalP=ventas.reduce((s,v)=>s+Number(v.p||0),0);
+    const totalCom=ventas.reduce((s,v)=>s+calcCom(v.p,v.l,rates),0);
+    const totalCol=inv.reduce((s,r)=>s+Number(r.col||0),0);
+    const totalUSD=inv.reduce((s,r)=>s+Number(r.usd||0),0);
+    rows.push(['','','','TOTAL',totalP,'',totalCom,'','TOTAL',totalCol,totalUSD]);
+    const ws=XLSX.utils.aoa_to_sheet(rows);
+    ws['!cols']=[{wch:4},{wch:40},{wch:22},{wch:12},{wch:14},{wch:10},{wch:14},{wch:2},{wch:12},{wch:14},{wch:10}];
+    XLSX.utils.book_append_sheet(wb,ws,mes.slice(0,3));
+  });
+  const resRows=[['MES','PRIMAS TOTALES','INGRESOS WEB','INVERSIÓN ₡','INVERSIÓN $','ROI %']];
+  let totP=0,totI=0,totInv=0,totUSD=0;
+  MESES.forEach(mes=>{
+    const d=months[mes]||{ventas:[],inv:[]};
+    const prima=d.ventas.reduce((s,v)=>s+Number(v.p||0),0);
+    const ing=d.ventas.reduce((s,v)=>s+calcCom(v.p,v.l,rates),0);
+    const inv=d.inv.reduce((s,r)=>s+Number(r.col||0),0);
+    const usd=d.inv.reduce((s,r)=>s+Number(r.usd||0),0);
+    const roi=inv>0?(ing-inv)/inv*100:null;
+    resRows.push([mes,prima,ing,inv,usd,prima>0?roi:null]);
+    totP+=prima;totI+=ing;totInv+=inv;totUSD+=usd;
+  });
+  resRows.push(['TOTAL ANUAL',totP,totI,totInv,totUSD,totInv>0?(totI-totInv)/totInv*100:null]);
+  resRows.push([],['META ANUAL',1250000000],['ALCANZADO',totP/1250000000]);
+  const wsRes=XLSX.utils.aoa_to_sheet(resRows);
+  wsRes['!cols']=[{wch:14},{wch:18},{wch:16},{wch:14},{wch:12},{wch:10}];
+  XLSX.utils.book_append_sheet(wb,wsRes,'RESUMEN');
+  const tasasRows=[['LÍNEA','TASA'],...LINEAS.map(l=>[l,rates[l]||0.15])];
+  const wsTasas=XLSX.utils.aoa_to_sheet(tasasRows);
+  XLSX.utils.book_append_sheet(wb,wsTasas,'TASAS');
+  XLSX.writeFile(wb,'Control_Ventas_2026.xlsx');
+}
 
-const Badge = ({text}) => (
-  <span style={{
-    fontSize:11,padding:'2px 7px',borderRadius:10,fontWeight:500,
-    background:`${LINEA_COLORS[text]||'#6b7280'}18`,
-    color:LINEA_COLORS[text]||'#6b7280'
-  }}>{text}</span>
-);
+/* ---- UI ---- */
+const Badge=({text})=>(<span style={{fontSize:11,padding:'2px 7px',borderRadius:10,fontWeight:500,background:`${LINEA_COLORS[text]||'#6b7280'}20`,color:LINEA_COLORS[text]||'#6b7280'}}>{text}</span>);
+const VBadge=({v})=>(<span style={{fontSize:11,padding:'2px 7px',borderRadius:10,fontWeight:500,background:v==='WEB'?'#e0f2fe':v==='CARTERA'?'#f0fdf4':'#fef3c7',color:v==='WEB'?'#0369a1':v==='CARTERA'?'#15803d':'#92400e'}}>{v}</span>);
 
-const VBadge = ({v}) => (
-  <span style={{
-    fontSize:11,padding:'2px 7px',borderRadius:10,fontWeight:500,
-    background: v==='WEB'?'#e0f2fe': v==='CARTERA'?'#f0fdf4':'#fef3c7',
-    color: v==='WEB'?'#0369a1': v==='CARTERA'?'#15803d':'#92400e'
-  }}>{v}</span>
-);
-
-function Modal({title, onClose, children}) {
-  return (
-    <div style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.4)',zIndex:999,display:'flex',alignItems:'center',justifyContent:'center',padding:16}} onClick={onClose}>
-      <div style={{background:'var(--color-background-primary)',borderRadius:12,padding:24,width:'100%',maxWidth:520,maxHeight:'90vh',overflowY:'auto'}} onClick={e=>e.stopPropagation()}>
+function Modal({title,onClose,children,wide}){
+  return(
+    <div style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.45)',zIndex:999,display:'flex',alignItems:'center',justifyContent:'center',padding:16}} onClick={onClose}>
+      <div style={{background:'white',borderRadius:12,padding:24,width:'100%',maxWidth:wide?640:520,maxHeight:'90vh',overflowY:'auto',boxShadow:'0 20px 60px rgba(0,0,0,0.2)'}} onClick={e=>e.stopPropagation()}>
         <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:20}}>
-          <span style={{fontSize:16,fontWeight:500,color:'var(--color-text-primary)'}}>{title}</span>
-          <button onClick={onClose} style={{background:'none',border:'none',cursor:'pointer',fontSize:20,color:'var(--color-text-secondary)',lineHeight:1}}>×</button>
+          <span style={{fontSize:16,fontWeight:700,color:'#0f172a'}}>{title}</span>
+          <button onClick={onClose} style={{background:'none',border:'none',cursor:'pointer',fontSize:22,color:'#94a3b8',lineHeight:1,padding:'0 4px'}}>×</button>
         </div>
         {children}
       </div>
@@ -187,367 +248,290 @@ function Modal({title, onClose, children}) {
   );
 }
 
-function Field({label, children}) {
-  return (
-    <div style={{marginBottom:14}}>
-      <label style={{fontSize:12,color:'var(--color-text-secondary)',display:'block',marginBottom:4}}>{label}</label>
-      {children}
-    </div>
+const inS={width:'100%',padding:'8px 10px',borderRadius:6,border:'1px solid #e2e8f0',background:'white',color:'#0f172a',fontSize:14,boxSizing:'border-box'};
+
+function TasasModal({rates,onSave,onClose}){
+  const [local,setLocal]=useState({...rates});
+  const set=(k,v)=>setLocal(prev=>({...prev,[k]:v}));
+  return(
+    <Modal title="⚙️ Tasas de comisión" onClose={onClose} wide>
+      <p style={{fontSize:13,color:'#64748b',marginBottom:16}}>Edite las tasas. Los cambios afectan todos los cálculos de Ingresos WEB.</p>
+      <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10,marginBottom:20}}>
+        {LINEAS.map(l=>(
+          <div key={l} style={{background:'#f8fafc',borderRadius:8,padding:'10px 12px',border:'1px solid #f1f5f9'}}>
+            <div style={{display:'flex',alignItems:'center',gap:6,marginBottom:6}}>
+              <span style={{width:8,height:8,borderRadius:'50%',background:LINEA_COLORS[l]||'#6b7280',flexShrink:0}}></span>
+              <label style={{fontSize:12,color:'#475569',fontWeight:500}}>{l}</label>
+            </div>
+            <div style={{display:'flex',alignItems:'center',gap:6}}>
+              <input type="number" step="0.1" min="0" max="100" style={{...inS,width:80,textAlign:'right'}}
+                value={((local[l]||0.15)*100).toFixed(1)}
+                onChange={e=>set(l,Number(e.target.value)/100)}/>
+              <span style={{fontSize:13,color:'#64748b'}}>%</span>
+              <span style={{fontSize:10,color:'#94a3b8'}}>orig: {((DEFAULT_COM[l]||0.15)*100).toFixed(1)}%</span>
+            </div>
+          </div>
+        ))}
+      </div>
+      <div style={{display:'flex',justifyContent:'space-between'}}>
+        <button onClick={()=>setLocal({...DEFAULT_COM})} style={{padding:'8px 14px',borderRadius:6,border:'1px solid #e2e8f0',background:'none',cursor:'pointer',fontSize:13,color:'#64748b'}}>Restaurar defaults</button>
+        <div style={{display:'flex',gap:10}}>
+          <button onClick={onClose} style={{padding:'8px 16px',borderRadius:6,border:'1px solid #e2e8f0',background:'none',cursor:'pointer',fontSize:13,color:'#64748b'}}>Cancelar</button>
+          <button onClick={()=>onSave(local)} style={{padding:'8px 20px',borderRadius:6,border:'none',background:BLUE,color:'white',cursor:'pointer',fontSize:13,fontWeight:700}}>Guardar tasas</button>
+        </div>
+      </div>
+    </Modal>
   );
 }
 
-function VentaModal({venta, onSave, onDelete, onClose}) {
-  const [form, setForm] = useState(venta || {c:'',l:'AUTOMOVILES',f:'ANUAL',p:'',v:'WEB'});
-  const set = (k,val) => setForm(prev=>({...prev,[k]:val}));
-  const comision = calcCom(Number(form.p||0), form.l);
-  const inStyle = {width:'100%',padding:'8px 10px',borderRadius:6,border:'0.5px solid var(--color-border-secondary)',background:'var(--color-background-primary)',color:'var(--color-text-primary)',fontSize:14,boxSizing:'border-box'};
-  return (
-    <Modal title={venta ? 'Editar venta' : 'Nueva venta'} onClose={onClose}>
-      <Field label="Cliente">
-        <input style={inStyle} value={form.c} onChange={e=>set('c',e.target.value)} placeholder="Nombre del asegurado" />
-      </Field>
-      <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:12}}>
-        <Field label="Línea">
-          <select style={inStyle} value={form.l} onChange={e=>set('l',e.target.value)}>
-            {LINEAS.map(l=><option key={l}>{l}</option>)}
-          </select>
-        </Field>
-        <Field label="Forma de pago">
-          <select style={inStyle} value={form.f} onChange={e=>set('f',e.target.value)}>
-            {FORMAS.map(f=><option key={f}>{f}</option>)}
-          </select>
-        </Field>
-        <Field label="Prima (₡)">
-          <input style={inStyle} type="number" value={form.p} onChange={e=>set('p',e.target.value)} placeholder="0" />
-        </Field>
-        <Field label="Referencia">
-          <select style={inStyle} value={form.v} onChange={e=>set('v',e.target.value)}>
-            {VENDEDORES.map(v=><option key={v}>{v}</option>)}
-          </select>
-        </Field>
+function VentaModal({venta,onSave,onDelete,onClose,rates}){
+  const [form,setForm]=useState(venta||{c:'',l:'AUTOMOVILES',f:'ANUAL',p:'',v:'WEB'});
+  const set=(k,v)=>setForm(prev=>({...prev,[k]:v}));
+  const com=calcCom(Number(form.p||0),form.l,rates);
+  return(
+    <Modal title={venta?'Editar venta':'Nueva venta'} onClose={onClose}>
+      <div style={{marginBottom:14}}>
+        <label style={{fontSize:12,color:'#64748b',display:'block',marginBottom:4}}>Cliente</label>
+        <input style={inS} value={form.c} onChange={e=>set('c',e.target.value)} placeholder="Nombre del asegurado"/>
       </div>
-      <div style={{background:'var(--color-background-secondary)',borderRadius:8,padding:'12px 14px',marginBottom:20}}>
-        <span style={{fontSize:12,color:'var(--color-text-secondary)'}}>Ingresos WEB ({(COM[form.l]||0.15)*100}%): </span>
-        <span style={{fontSize:15,fontWeight:500,color:BLUE}}>₡{fmtN(comision)}</span>
+      <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:12}}>
+        <div><label style={{fontSize:12,color:'#64748b',display:'block',marginBottom:4}}>Línea</label>
+          <select style={inS} value={form.l} onChange={e=>set('l',e.target.value)}>{LINEAS.map(l=><option key={l}>{l}</option>)}</select></div>
+        <div><label style={{fontSize:12,color:'#64748b',display:'block',marginBottom:4}}>Forma de pago</label>
+          <select style={inS} value={form.f} onChange={e=>set('f',e.target.value)}>{FORMAS.map(f=><option key={f}>{f}</option>)}</select></div>
+        <div><label style={{fontSize:12,color:'#64748b',display:'block',marginBottom:4}}>Prima (₡)</label>
+          <input style={inS} type="number" value={form.p} onChange={e=>set('p',e.target.value)} placeholder="0"/></div>
+        <div><label style={{fontSize:12,color:'#64748b',display:'block',marginBottom:4}}>Referencia</label>
+          <select style={inS} value={form.v} onChange={e=>set('v',e.target.value)}>{VENDEDORES.map(v=><option key={v}>{v}</option>)}</select></div>
+      </div>
+      <div style={{background:'#f0f9ff',border:'1px solid #bae6fd',borderRadius:8,padding:'10px 14px',margin:'14px 0',display:'flex',justifyContent:'space-between',alignItems:'center'}}>
+        <span style={{fontSize:12,color:'#0369a1'}}>Ingresos WEB — tasa {((rates[form.l]||0.15)*100).toFixed(1)}%</span>
+        <span style={{fontSize:17,fontWeight:700,color:BLUE}}>₡{fmtN(com)}</span>
       </div>
       <div style={{display:'flex',gap:10,justifyContent:'space-between'}}>
-        {venta && <button onClick={()=>onDelete(venta.id)} style={{padding:'8px 16px',borderRadius:6,border:'0.5px solid #fca5a5',background:'#fef2f2',color:'#dc2626',cursor:'pointer',fontSize:14}}>Eliminar</button>}
+        {venta&&<button onClick={()=>onDelete(venta.id)} style={{padding:'8px 16px',borderRadius:6,border:'1px solid #fca5a5',background:'#fef2f2',color:'#dc2626',cursor:'pointer',fontSize:13}}>Eliminar</button>}
         <div style={{display:'flex',gap:10,marginLeft:'auto'}}>
-          <button onClick={onClose} style={{padding:'8px 16px',borderRadius:6,border:'0.5px solid var(--color-border-secondary)',background:'none',cursor:'pointer',fontSize:14,color:'var(--color-text-secondary)'}}>Cancelar</button>
-          <button onClick={()=>onSave({...form,id:venta?.id||nextId(),p:Number(form.p||0)})} style={{padding:'8px 20px',borderRadius:6,border:'none',background:BLUE,color:'white',cursor:'pointer',fontSize:14,fontWeight:500}}>Guardar</button>
+          <button onClick={onClose} style={{padding:'8px 16px',borderRadius:6,border:'1px solid #e2e8f0',background:'none',cursor:'pointer',fontSize:13,color:'#64748b'}}>Cancelar</button>
+          <button onClick={()=>onSave({...form,id:venta?.id||nextId(),p:Number(form.p||0)})} style={{padding:'8px 20px',borderRadius:6,border:'none',background:BLUE,color:'white',cursor:'pointer',fontSize:13,fontWeight:700}}>Guardar</button>
         </div>
       </div>
     </Modal>
   );
 }
 
-function InvModal({row, onSave, onDelete, onClose}) {
-  const [form, setForm] = useState(row || {fecha:'',col:'',usd:''});
-  const set = (k,v) => setForm(prev=>({...prev,[k]:v}));
-  const inStyle = {width:'100%',padding:'8px 10px',borderRadius:6,border:'0.5px solid var(--color-border-secondary)',background:'var(--color-background-primary)',color:'var(--color-text-primary)',fontSize:14,boxSizing:'border-box'};
-  return (
-    <Modal title={row ? 'Editar inversión WEB' : 'Nueva inversión WEB'} onClose={onClose}>
-      <Field label="Fecha">
-        <input style={inStyle} type="date" value={form.fecha} onChange={e=>set('fecha',e.target.value)} />
-      </Field>
-      <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:12}}>
-        <Field label="Colones (₡)">
-          <input style={inStyle} type="number" value={form.col} onChange={e=>set('col',e.target.value)} placeholder="0" />
-        </Field>
-        <Field label="Dólares ($)">
-          <input style={inStyle} type="number" value={form.usd} onChange={e=>set('usd',e.target.value)} placeholder="0" />
-        </Field>
+function InvModal({row,onSave,onDelete,onClose}){
+  const [form,setForm]=useState(row||{fecha:'',col:'',usd:''});
+  const set=(k,v)=>setForm(prev=>({...prev,[k]:v}));
+  return(
+    <Modal title={row?'Editar inversión WEB':'Nueva inversión WEB'} onClose={onClose}>
+      <div style={{marginBottom:14}}>
+        <label style={{fontSize:12,color:'#64748b',display:'block',marginBottom:4}}>Fecha</label>
+        <input style={inS} type="date" value={form.fecha} onChange={e=>set('fecha',e.target.value)}/>
       </div>
-      <div style={{display:'flex',gap:10,justifyContent:'space-between',marginTop:8}}>
-        {row && <button onClick={()=>onDelete(row.id)} style={{padding:'8px 16px',borderRadius:6,border:'0.5px solid #fca5a5',background:'#fef2f2',color:'#dc2626',cursor:'pointer',fontSize:14}}>Eliminar</button>}
+      <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:12,marginBottom:20}}>
+        <div><label style={{fontSize:12,color:'#64748b',display:'block',marginBottom:4}}>Colones (₡)</label>
+          <input style={inS} type="number" value={form.col} onChange={e=>set('col',e.target.value)} placeholder="0"/></div>
+        <div><label style={{fontSize:12,color:'#64748b',display:'block',marginBottom:4}}>Dólares ($)</label>
+          <input style={inS} type="number" value={form.usd} onChange={e=>set('usd',e.target.value)} placeholder="0"/></div>
+      </div>
+      <div style={{display:'flex',gap:10,justifyContent:'space-between'}}>
+        {row&&<button onClick={()=>onDelete(row.id)} style={{padding:'8px 16px',borderRadius:6,border:'1px solid #fca5a5',background:'#fef2f2',color:'#dc2626',cursor:'pointer',fontSize:13}}>Eliminar</button>}
         <div style={{display:'flex',gap:10,marginLeft:'auto'}}>
-          <button onClick={onClose} style={{padding:'8px 16px',borderRadius:6,border:'0.5px solid var(--color-border-secondary)',background:'none',cursor:'pointer',fontSize:14,color:'var(--color-text-secondary)'}}>Cancelar</button>
-          <button onClick={()=>onSave({...form,id:row?.id||nextId(),col:Number(form.col||0),usd:Number(form.usd||0)})} style={{padding:'8px 20px',borderRadius:6,border:'none',background:BLUE,color:'white',cursor:'pointer',fontSize:14,fontWeight:500}}>Guardar</button>
+          <button onClick={onClose} style={{padding:'8px 16px',borderRadius:6,border:'1px solid #e2e8f0',background:'none',cursor:'pointer',fontSize:13,color:'#64748b'}}>Cancelar</button>
+          <button onClick={()=>onSave({...form,id:row?.id||nextId(),col:Number(form.col||0),usd:Number(form.usd||0)})} style={{padding:'8px 20px',borderRadius:6,border:'none',background:'#7c3aed',color:'white',cursor:'pointer',fontSize:13,fontWeight:700}}>Guardar</button>
         </div>
       </div>
     </Modal>
   );
 }
 
-function MonthView({mes, data, updateMonths}) {
-  const [ventaModal, setVentaModal] = useState(null);
-  const [invModal, setInvModal] = useState(null);
-
-  const ventas = data.ventas || [];
-  const inv = data.inv || [];
-  const totalP = ventas.reduce((s,v)=>s+Number(v.p||0),0);
-  const totalCom = ventas.reduce((s,v)=>s+calcCom(Number(v.p||0),v.l),0);
-  const totalCol = inv.reduce((s,r)=>s+Number(r.col||0),0);
-  const totalUSD = inv.reduce((s,r)=>s+Number(r.usd||0),0);
-  const roi = totalCol > 0 ? ((totalCom - totalCol)/totalCol*100) : 0;
-
-  const saveVenta = (venta) => {
-    updateMonths(prev => {
-      const list = prev[mes].ventas;
-      const idx = list.findIndex(x=>x.id===venta.id);
-      const next = idx>=0 ? list.map(x=>x.id===venta.id?venta:x) : [...list,venta];
-      return {...prev,[mes]:{...prev[mes],ventas:next}};
-    });
-    setVentaModal(null);
-  };
-  const deleteVenta = (id) => {
-    updateMonths(prev=>({...prev,[mes]:{...prev[mes],ventas:prev[mes].ventas.filter(x=>x.id!==id)}}));
-    setVentaModal(null);
-  };
-  const saveInv = (row) => {
-    updateMonths(prev => {
-      const list = prev[mes].inv;
-      const idx = list.findIndex(x=>x.id===row.id);
-      const next = idx>=0 ? list.map(x=>x.id===row.id?row:x) : [...list,row].sort((a,b)=>a.fecha.localeCompare(b.fecha));
-      return {...prev,[mes]:{...prev[mes],inv:next}};
-    });
-    setInvModal(null);
-  };
-  const deleteInv = (id) => {
-    updateMonths(prev=>({...prev,[mes]:{...prev[mes],inv:prev[mes].inv.filter(x=>x.id!==id)}}));
-    setInvModal(null);
-  };
-
-  const thStyle = {padding:'8px 10px',fontSize:11,fontWeight:500,color:'var(--color-text-secondary)',textAlign:'left',borderBottom:'0.5px solid var(--color-border-tertiary)',whiteSpace:'nowrap',background:'var(--color-background-secondary)'};
-  const tdStyle = {padding:'9px 10px',fontSize:13,borderBottom:'0.5px solid var(--color-border-tertiary)',verticalAlign:'middle'};
-  const totStyle = {padding:'9px 10px',fontSize:13,fontWeight:500,borderTop:'1px solid var(--color-border-secondary)',background:'var(--color-background-secondary)'};
-
-  return (
-    <div style={{padding:16,maxWidth:1400,margin:'0 auto'}}>
-      {/* KPI Cards */}
-      <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(160px,1fr))',gap:10,marginBottom:16}}>
-        {[
-          {label:'Prima Total',val:`₡${fmtN(totalP)}`,color:'var(--color-text-primary)'},
-          {label:'Ingresos WEB',val:`₡${fmtN(totalCom)}`,color:BLUE},
-          {label:'Inversión ADS',val:`₡${fmtN(totalCol)}`,color:'#dc2626'},
-          {label:'ROI',val:`${roi>=0?'+':''}${roi.toFixed(1)}%`,color:roi>=0?'#15803d':'#dc2626'},
-          {label:'Inversión USD',val:`$${fmtN(totalUSD)}`,color:'#7c3aed'},
-        ].map(({label,val,color})=>(
-          <div key={label} style={{background:'var(--color-background-primary)',border:'0.5px solid var(--color-border-tertiary)',borderRadius:10,padding:'12px 14px'}}>
-            <div style={{fontSize:11,color:'var(--color-text-secondary)',marginBottom:4}}>{label}</div>
-            <div style={{fontSize:18,fontWeight:500,color}}>{val}</div>
+function MonthView({mes,data,updateMonths,rates}){
+  const [vm,setVm]=useState(null);
+  const [im,setIm]=useState(null);
+  const ventas=data.ventas||[],inv=data.inv||[];
+  const totalP=ventas.reduce((s,v)=>s+Number(v.p||0),0);
+  const totalCom=ventas.reduce((s,v)=>s+calcCom(Number(v.p||0),v.l,rates),0);
+  const totalCol=inv.reduce((s,r)=>s+Number(r.col||0),0);
+  const totalUSD=inv.reduce((s,r)=>s+Number(r.usd||0),0);
+  const roi=totalCol>0?(totalCom-totalCol)/totalCol*100:0;
+  const saveV=v=>{updateMonths(prev=>{const list=prev[mes].ventas,idx=list.findIndex(x=>x.id===v.id),next=idx>=0?list.map(x=>x.id===v.id?v:x):[...list,v];return{...prev,[mes]:{...prev[mes],ventas:next}}});setVm(null)};
+  const delV=id=>{updateMonths(prev=>({...prev,[mes]:{...prev[mes],ventas:prev[mes].ventas.filter(x=>x.id!==id)}}));setVm(null)};
+  const saveI=r=>{updateMonths(prev=>{const list=prev[mes].inv,idx=list.findIndex(x=>x.id===r.id),next=idx>=0?list.map(x=>x.id===r.id?r:x):[...list,r].sort((a,b)=>a.fecha.localeCompare(b.fecha));return{...prev,[mes]:{...prev[mes],inv:next}}});setIm(null)};
+  const delI=id=>{updateMonths(prev=>({...prev,[mes]:{...prev[mes],inv:prev[mes].inv.filter(x=>x.id!==id)}}));setIm(null)};
+  const th={padding:'8px 10px',fontSize:11,fontWeight:600,color:'#64748b',textAlign:'left',borderBottom:'1px solid #f1f5f9',whiteSpace:'nowrap',background:'#f8fafc',letterSpacing:'0.03em'};
+  const td={padding:'9px 10px',fontSize:13,borderBottom:'1px solid #f8fafc',verticalAlign:'middle',color:'#1e293b'};
+  const tot={padding:'9px 10px',fontSize:13,fontWeight:700,borderTop:'2px solid #e2e8f0',background:'#f8fafc'};
+  return(
+    <div style={{padding:14,maxWidth:1400}}>
+      <div style={{display:'grid',gridTemplateColumns:'repeat(5,1fr)',gap:8,marginBottom:14}}>
+        {[{l:'Prima Total',v:`₡${fmtN(totalP)}`,c:'#0f172a'},{l:'Ingresos WEB',v:`₡${fmtN(totalCom)}`,c:BLUE},{l:'Inversión ADS ₡',v:`₡${fmtN(totalCol)}`,c:'#dc2626'},{l:'Inversión ADS $',v:`$${fmtN(totalUSD)}`,c:'#7c3aed'},{l:'ROI',v:`${roi>=0?'+':''}${roi.toFixed(1)}%`,c:roi>=0?'#15803d':'#dc2626'}].map(({l,v,c})=>(
+          <div key={l} style={{background:'white',border:'1px solid #f1f5f9',borderRadius:8,padding:'10px 12px'}}>
+            <div style={{fontSize:10,color:'#94a3b8',marginBottom:3,textTransform:'uppercase',letterSpacing:'0.05em'}}>{l}</div>
+            <div style={{fontSize:16,fontWeight:700,color:c}}>{v}</div>
           </div>
         ))}
       </div>
-
-      <div style={{display:'grid',gridTemplateColumns:'1fr 340px',gap:16,alignItems:'start'}}>
-        {/* Ventas Table */}
-        <div style={{background:'var(--color-background-primary)',border:'0.5px solid var(--color-border-tertiary)',borderRadius:10,overflow:'hidden'}}>
-          <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',padding:'12px 14px',borderBottom:'0.5px solid var(--color-border-tertiary)'}}>
-            <div>
-              <span style={{fontWeight:500,fontSize:14,color:'var(--color-text-primary)'}}>Control de Clientes</span>
-              <span style={{fontSize:12,color:'var(--color-text-secondary)',marginLeft:8}}>{ventas.length} registros</span>
+      <div style={{display:'grid',gridTemplateColumns:'1fr 300px',gap:12,alignItems:'start'}}>
+        <div style={{background:'white',border:'1px solid #f1f5f9',borderRadius:10,overflow:'hidden'}}>
+          <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',padding:'12px 14px',borderBottom:'1px solid #f1f5f9'}}>
+            <div style={{display:'flex',alignItems:'center',gap:8}}>
+              <span style={{fontWeight:700,fontSize:14,color:'#0f172a'}}>Control de Clientes · {mes}</span>
+              <span style={{fontSize:11,background:'#f0f9ff',color:BLUE,padding:'2px 8px',borderRadius:10}}>{ventas.length} pólizas</span>
             </div>
-            <button onClick={()=>setVentaModal('new')} style={{padding:'6px 14px',borderRadius:6,border:`1px solid ${BLUE}`,background:BLUE,color:'white',cursor:'pointer',fontSize:13,fontWeight:500}}>+ Agregar</button>
+            <button onClick={()=>setVm('new')} style={{padding:'6px 14px',borderRadius:6,border:'none',background:BLUE,color:'white',cursor:'pointer',fontSize:13,fontWeight:700}}>+ Agregar</button>
           </div>
           <div style={{overflowX:'auto'}}>
-            <table style={{width:'100%',borderCollapse:'collapse',minWidth:640}}>
-              <thead>
-                <tr>
-                  {['#','Cliente','Línea','Forma Pago','Prima','Ref.','Ingresos WEB'].map(h=>(
-                    <th key={h} style={thStyle}>{h}</th>
-                  ))}
-                </tr>
-              </thead>
+            <table style={{width:'100%',borderCollapse:'collapse',minWidth:620}}>
+              <thead><tr>{['#','Cliente','Línea','F. Pago','Prima','Ref.','Ing. WEB'].map(h=><th key={h} style={th}>{h}</th>)}</tr></thead>
               <tbody>
                 {ventas.map((v,i)=>(
-                  <tr key={v.id} onClick={()=>setVentaModal(v)} style={{cursor:'pointer',transition:'background 0.1s'}}
-                    onMouseEnter={e=>e.currentTarget.style.background='var(--color-background-secondary)'}
+                  <tr key={v.id} onClick={()=>setVm(v)} style={{cursor:'pointer'}}
+                    onMouseEnter={e=>e.currentTarget.style.background='#f8fafc'}
                     onMouseLeave={e=>e.currentTarget.style.background='transparent'}>
-                    <td style={{...tdStyle,color:'var(--color-text-secondary)',width:32}}>{i+1}</td>
-                    <td style={{...tdStyle,maxWidth:200}}><div style={{overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap',maxWidth:200}}>{v.c}</div></td>
-                    <td style={tdStyle}><Badge text={v.l}/></td>
-                    <td style={{...tdStyle,color:'var(--color-text-secondary)'}}>{v.f}</td>
-                    <td style={{...tdStyle,textAlign:'right',fontFamily:'var(--font-mono)',fontSize:12}}>₡{fmtN(v.p)}</td>
-                    <td style={tdStyle}><VBadge v={v.v}/></td>
-                    <td style={{...tdStyle,textAlign:'right',fontFamily:'var(--font-mono)',fontSize:12,color:BLUE}}>₡{fmtN(calcCom(v.p,v.l))}</td>
+                    <td style={{...td,color:'#94a3b8',width:30,fontSize:11}}>{i+1}</td>
+                    <td style={{...td,maxWidth:0,width:'35%'}}><div style={{overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{v.c}</div></td>
+                    <td style={td}><Badge text={v.l}/></td>
+                    <td style={{...td,color:'#64748b',fontSize:12}}>{v.f}</td>
+                    <td style={{...td,textAlign:'right',fontFamily:'monospace',fontSize:12}}>₡{fmtN(v.p)}</td>
+                    <td style={td}><VBadge v={v.v}/></td>
+                    <td style={{...td,textAlign:'right',fontFamily:'monospace',fontSize:12,color:BLUE,fontWeight:600}}>₡{fmtN(calcCom(v.p,v.l,rates))}</td>
                   </tr>
                 ))}
-                {ventas.length===0 && (
-                  <tr><td colSpan={7} style={{...tdStyle,textAlign:'center',color:'var(--color-text-secondary)',padding:'2rem'}}>Sin registros. Haga clic en "+ Agregar".</td></tr>
-                )}
+                {ventas.length===0&&<tr><td colSpan={7} style={{...td,textAlign:'center',color:'#94a3b8',padding:'2.5rem',fontSize:14}}>Sin registros. Haga clic en "+ Agregar".</td></tr>}
               </tbody>
-              <tfoot>
-                <tr>
-                  <td colSpan={4} style={{...totStyle,color:'var(--color-text-secondary)'}}>Total</td>
-                  <td style={{...totStyle,textAlign:'right',fontFamily:'var(--font-mono)',fontSize:13}}>₡{fmtN(totalP)}</td>
-                  <td style={totStyle}></td>
-                  <td style={{...totStyle,textAlign:'right',fontFamily:'var(--font-mono)',fontSize:13,color:BLUE}}>₡{fmtN(totalCom)}</td>
-                </tr>
-              </tfoot>
+              <tfoot><tr>
+                <td colSpan={4} style={{...tot,color:'#64748b'}}>Total {mes}</td>
+                <td style={{...tot,textAlign:'right',fontFamily:'monospace'}}>₡{fmtN(totalP)}</td>
+                <td style={tot}></td>
+                <td style={{...tot,textAlign:'right',fontFamily:'monospace',color:BLUE}}>₡{fmtN(totalCom)}</td>
+              </tr></tfoot>
             </table>
           </div>
         </div>
-
-        {/* Inversión WEB Table */}
-        <div style={{background:'var(--color-background-primary)',border:'0.5px solid var(--color-border-tertiary)',borderRadius:10,overflow:'hidden'}}>
-          <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',padding:'12px 14px',borderBottom:'0.5px solid var(--color-border-tertiary)'}}>
+        <div style={{background:'white',border:'1px solid #f1f5f9',borderRadius:10,overflow:'hidden'}}>
+          <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',padding:'12px 14px',borderBottom:'1px solid #f1f5f9'}}>
             <div>
-              <span style={{fontWeight:500,fontSize:14,color:'var(--color-text-primary)'}}>Inversión WEB</span>
-              <span style={{fontSize:12,color:'var(--color-text-secondary)',marginLeft:8}}>Google Ads</span>
+              <span style={{fontWeight:700,fontSize:14,color:'#0f172a'}}>Inversión WEB</span>
+              <div style={{fontSize:11,color:'#94a3b8'}}>Google Ads · {inv.length} registros</div>
             </div>
-            <button onClick={()=>setInvModal('new')} style={{padding:'6px 14px',borderRadius:6,border:'1px solid #7c3aed',background:'#7c3aed',color:'white',cursor:'pointer',fontSize:13,fontWeight:500}}>+ Agregar</button>
+            <button onClick={()=>setIm('new')} style={{padding:'5px 12px',borderRadius:6,border:'none',background:'#7c3aed',color:'white',cursor:'pointer',fontSize:12,fontWeight:700}}>+</button>
           </div>
-          <div style={{overflowX:'auto',maxHeight:520,overflowY:'auto'}}>
+          <div style={{maxHeight:460,overflowY:'auto'}}>
             <table style={{width:'100%',borderCollapse:'collapse'}}>
-              <thead>
-                <tr>
-                  {['Fecha','Colones ₡','USD $'].map(h=>(
-                    <th key={h} style={thStyle}>{h}</th>
-                  ))}
-                </tr>
-              </thead>
+              <thead><tr>{['Fecha','₡ Colones','$ USD'].map(h=><th key={h} style={th}>{h}</th>)}</tr></thead>
               <tbody>
                 {inv.map(r=>(
-                  <tr key={r.id} onClick={()=>setInvModal(r)} style={{cursor:'pointer'}}
-                    onMouseEnter={e=>e.currentTarget.style.background='var(--color-background-secondary)'}
+                  <tr key={r.id} onClick={()=>setIm(r)} style={{cursor:'pointer'}}
+                    onMouseEnter={e=>e.currentTarget.style.background='#f8fafc'}
                     onMouseLeave={e=>e.currentTarget.style.background='transparent'}>
-                    <td style={{...tdStyle,fontSize:12,color:'var(--color-text-secondary)'}}>{r.fecha?.slice(5).replace('-','/')}</td>
-                    <td style={{...tdStyle,textAlign:'right',fontFamily:'var(--font-mono)',fontSize:12}}>₡{fmtN(r.col)}</td>
-                    <td style={{...tdStyle,textAlign:'right',fontFamily:'var(--font-mono)',fontSize:12,color:'#7c3aed'}}>${fmtN(r.usd)}</td>
+                    <td style={{...td,fontSize:11,color:'#64748b'}}>{r.fecha?.slice(5).replace('-','/')}</td>
+                    <td style={{...td,textAlign:'right',fontFamily:'monospace',fontSize:12}}>₡{fmtN(r.col)}</td>
+                    <td style={{...td,textAlign:'right',fontFamily:'monospace',fontSize:12,color:'#7c3aed'}}>${r.usd}</td>
                   </tr>
                 ))}
-                {inv.length===0 && (
-                  <tr><td colSpan={3} style={{...tdStyle,textAlign:'center',color:'var(--color-text-secondary)',padding:'2rem'}}>Sin registros</td></tr>
-                )}
+                {inv.length===0&&<tr><td colSpan={3} style={{...td,textAlign:'center',color:'#94a3b8',padding:'2rem',fontSize:13}}>Sin datos</td></tr>}
               </tbody>
-              <tfoot>
-                <tr>
-                  <td style={{...totStyle,color:'var(--color-text-secondary)'}}>Total</td>
-                  <td style={{...totStyle,textAlign:'right',fontFamily:'var(--font-mono)',color:'#dc2626'}}>₡{fmtN(totalCol)}</td>
-                  <td style={{...totStyle,textAlign:'right',fontFamily:'var(--font-mono)',color:'#7c3aed'}}>${fmtN(totalUSD)}</td>
-                </tr>
-              </tfoot>
+              <tfoot><tr>
+                <td style={{...tot,color:'#64748b'}}>Total</td>
+                <td style={{...tot,textAlign:'right',fontFamily:'monospace',color:'#dc2626'}}>₡{fmtN(totalCol)}</td>
+                <td style={{...tot,textAlign:'right',fontFamily:'monospace',color:'#7c3aed'}}>${fmtN(totalUSD)}</td>
+              </tr></tfoot>
             </table>
           </div>
         </div>
       </div>
-
-      {ventaModal && <VentaModal venta={ventaModal==='new'?null:ventaModal} onSave={saveVenta} onDelete={deleteVenta} onClose={()=>setVentaModal(null)} />}
-      {invModal && <InvModal row={invModal==='new'?null:invModal} onSave={saveInv} onDelete={deleteInv} onClose={()=>setInvModal(null)} />}
+      {vm&&<VentaModal venta={vm==='new'?null:vm} onSave={saveV} onDelete={delV} onClose={()=>setVm(null)} rates={rates}/>}
+      {im&&<InvModal row={im==='new'?null:im} onSave={saveI} onDelete={delI} onClose={()=>setIm(null)}/>}
     </div>
   );
 }
 
-function ResumenView({months}) {
-  const summary = MESES.map(m => {
-    const d = months[m]||{ventas:[],inv:[]};
-    const prima = d.ventas.reduce((s,v)=>s+Number(v.p||0),0);
-    const ing = d.ventas.reduce((s,v)=>s+calcCom(Number(v.p||0),v.l),0);
-    const inv = d.inv.reduce((s,r)=>s+Number(r.col||0),0);
-    return {m,prima,ing,inv,roi:inv>0?(ing-inv)/inv*100:0};
+function ResumenView({months,rates}){
+  const s=MESES.map(m=>{
+    const d=months[m]||{ventas:[],inv:[]};
+    const prima=d.ventas.reduce((a,v)=>a+Number(v.p||0),0);
+    const ing=d.ventas.reduce((a,v)=>a+calcCom(Number(v.p||0),v.l,rates),0);
+    const inv=d.inv.reduce((a,r)=>a+Number(r.col||0),0);
+    const usd=d.inv.reduce((a,r)=>a+Number(r.usd||0),0);
+    return{m,prima,ing,inv,usd,roi:inv>0?(ing-inv)/inv*100:0};
   });
-  const totalPrima = summary.reduce((s,r)=>s+r.prima,0);
-  const totalIng = summary.reduce((s,r)=>s+r.ing,0);
-  const totalInv = summary.reduce((s,r)=>s+r.inv,0);
-  const pct = Math.min(100,(totalPrima/META)*100);
-  const maxPrima = Math.max(...summary.map(r=>r.prima),1);
-
-  const thS = {padding:'8px 12px',fontSize:11,fontWeight:500,color:'var(--color-text-secondary)',textAlign:'left',borderBottom:'0.5px solid var(--color-border-tertiary)',background:'var(--color-background-secondary)',whiteSpace:'nowrap'};
-  const tdS = {padding:'9px 12px',fontSize:13,borderBottom:'0.5px solid var(--color-border-tertiary)'};
-
-  return (
-    <div style={{padding:16,maxWidth:1200,margin:'0 auto'}}>
-      {/* Meta Progress */}
-      <div style={{background:'var(--color-background-primary)',border:'0.5px solid var(--color-border-tertiary)',borderRadius:10,padding:'20px 24px',marginBottom:16}}>
-        <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-end',marginBottom:12}}>
+  const totP=s.reduce((a,r)=>a+r.prima,0),totI=s.reduce((a,r)=>a+r.ing,0),totInv=s.reduce((a,r)=>a+r.inv,0),totUSD=s.reduce((a,r)=>a+r.usd,0);
+  const pct=Math.min(100,totP/META*100);
+  const maxP=Math.max(...s.map(r=>r.prima),1);
+  const th={padding:'8px 12px',fontSize:11,fontWeight:600,color:'#64748b',textAlign:'left',borderBottom:'1px solid #f1f5f9',background:'#f8fafc',letterSpacing:'0.03em'};
+  const td={padding:'9px 12px',fontSize:13,borderBottom:'1px solid #f8fafc',color:'#1e293b'};
+  const tot={padding:'9px 12px',fontSize:13,fontWeight:700,borderTop:'2px solid #e2e8f0',background:'#f8fafc'};
+  return(
+    <div style={{padding:14,maxWidth:1100}}>
+      <div style={{background:'white',border:'1px solid #f1f5f9',borderRadius:10,padding:'20px 24px',marginBottom:14}}>
+        <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-end',marginBottom:14}}>
           <div>
-            <div style={{fontSize:12,color:'var(--color-text-secondary)',marginBottom:2}}>Meta Anual 2026</div>
-            <div style={{fontSize:28,fontWeight:500,color:'var(--color-text-primary)'}}>₡{fmtN(totalPrima)}</div>
-            <div style={{fontSize:12,color:'var(--color-text-secondary)'}}>de ₡{fmtN(META)}</div>
+            <div style={{fontSize:11,color:'#94a3b8',textTransform:'uppercase',letterSpacing:'0.05em',marginBottom:4}}>Progreso Meta Anual 2026</div>
+            <div style={{fontSize:30,fontWeight:700,color:'#0f172a'}}>₡{fmtN(totP)}</div>
+            <div style={{fontSize:13,color:'#94a3b8'}}>de ₡1,250,000,000 meta anual</div>
           </div>
           <div style={{textAlign:'right'}}>
-            <div style={{fontSize:32,fontWeight:500,color:BLUE}}>{pct.toFixed(1)}%</div>
-            <div style={{fontSize:12,color:'var(--color-text-secondary)'}}>alcanzado</div>
+            <div style={{fontSize:36,fontWeight:700,color:BLUE}}>{pct.toFixed(1)}%</div>
+            <div style={{fontSize:12,color:'#94a3b8'}}>alcanzado</div>
           </div>
         </div>
-        <div style={{height:12,background:'var(--color-background-secondary)',borderRadius:6,overflow:'hidden'}}>
-          <div style={{width:`${pct}%`,height:'100%',background:BLUE,borderRadius:6,transition:'width 0.5s'}}></div>
+        <div style={{height:14,background:'#f0f9ff',borderRadius:7,overflow:'hidden',marginBottom:6}}>
+          <div style={{width:`${pct}%`,height:'100%',background:BLUE,borderRadius:7}}></div>
         </div>
-        <div style={{display:'flex',justifyContent:'space-between',marginTop:6}}>
-          <span style={{fontSize:11,color:'var(--color-text-secondary)'}}>₡0</span>
-          <span style={{fontSize:11,color:'var(--color-text-secondary)'}}>₡{fmtN(META)}</span>
+        <div style={{display:'flex',justifyContent:'space-between',fontSize:11,color:'#94a3b8'}}>
+          <span>₡0</span><span>₡625M (50%)</span><span>₡1,250M (meta)</span>
         </div>
       </div>
-
-      {/* KPI Row */}
-      <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(160px,1fr))',gap:10,marginBottom:16}}>
-        {[
-          {l:'Ingresos WEB Total',v:`₡${fmtN(totalIng)}`,c:BLUE},
-          {l:'Inversión ADS Total',v:`₡${fmtN(totalInv)}`,c:'#dc2626'},
-          {l:'ROI General',v:`${totalInv>0?((totalIng-totalInv)/totalInv*100).toFixed(1):0}%`,c:'#15803d'},
-          {l:'Pendiente Meta',v:`₡${fmtN(META-totalPrima)}`,c:'#d97706'},
-        ].map(({l,v,c})=>(
-          <div key={l} style={{background:'var(--color-background-primary)',border:'0.5px solid var(--color-border-tertiary)',borderRadius:10,padding:'12px 14px'}}>
-            <div style={{fontSize:11,color:'var(--color-text-secondary)',marginBottom:4}}>{l}</div>
-            <div style={{fontSize:17,fontWeight:500,color:c}}>{v}</div>
+      <div style={{display:'grid',gridTemplateColumns:'repeat(4,1fr)',gap:8,marginBottom:14}}>
+        {[{l:'Ingresos WEB',v:`₡${fmtN(totI)}`,c:BLUE},{l:'Inversión ADS ₡',v:`₡${fmtN(totInv)}`,c:'#dc2626'},{l:'Inversión ADS $',v:`$${fmtN(totUSD)}`,c:'#7c3aed'},{l:'ROI General',v:totInv>0?`+${((totI-totInv)/totInv*100).toFixed(1)}%`:'—',c:'#15803d'}].map(({l,v,c})=>(
+          <div key={l} style={{background:'white',border:'1px solid #f1f5f9',borderRadius:8,padding:'12px 14px'}}>
+            <div style={{fontSize:10,color:'#94a3b8',marginBottom:3,textTransform:'uppercase',letterSpacing:'0.05em'}}>{l}</div>
+            <div style={{fontSize:18,fontWeight:700,color:c}}>{v}</div>
           </div>
         ))}
       </div>
-
-      {/* Bar Chart */}
-      <div style={{background:'var(--color-background-primary)',border:'0.5px solid var(--color-border-tertiary)',borderRadius:10,padding:'16px 20px',marginBottom:16}}>
-        <div style={{fontSize:13,fontWeight:500,marginBottom:16,color:'var(--color-text-primary)'}}>Primas por mes</div>
-        <div style={{display:'flex',alignItems:'flex-end',gap:8,height:140}}>
-          {summary.map(({m,prima})=>{
-            const h = prima > 0 ? Math.max(4,(prima/maxPrima)*120) : 2;
-            const hasData = prima > 0;
-            return (
-              <div key={m} style={{flex:1,display:'flex',flexDirection:'column',alignItems:'center',gap:4}}>
-                <div style={{fontSize:10,color:BLUE,fontFamily:'var(--font-mono)',opacity:hasData?1:0}}>
-                  {prima>1e8?`${(prima/1e9).toFixed(1)}B`:`${(prima/1e6).toFixed(0)}M`}
-                </div>
-                <div style={{width:'100%',height:h,background:hasData?BLUE:'var(--color-background-secondary)',borderRadius:'4px 4px 0 0',transition:'height 0.3s'}}></div>
-                <div style={{fontSize:10,color:'var(--color-text-secondary)',transform:'rotate(-45deg)',whiteSpace:'nowrap',marginTop:4}}>{m.slice(0,3)}</div>
+      <div style={{background:'white',border:'1px solid #f1f5f9',borderRadius:10,padding:'16px 20px',marginBottom:14}}>
+        <div style={{fontSize:12,fontWeight:600,color:'#64748b',marginBottom:16,textTransform:'uppercase',letterSpacing:'0.04em'}}>Primas mensuales</div>
+        <div style={{display:'flex',alignItems:'flex-end',gap:6,height:130,paddingBottom:4}}>
+          {s.map(({m,prima})=>{
+            const h=prima>0?Math.max(6,prima/maxP*110):2;
+            return(
+              <div key={m} style={{flex:1,display:'flex',flexDirection:'column',alignItems:'center',gap:3}}>
+                {prima>0&&<div style={{fontSize:9,color:BLUE,fontWeight:700,fontFamily:'monospace'}}>{prima>999999999?`${(prima/1e9).toFixed(2)}B`:`${(prima/1e6).toFixed(0)}M`}</div>}
+                <div style={{width:'100%',minHeight:2,height:h,background:prima>0?BLUE:'#e2e8f0',borderRadius:'3px 3px 0 0'}}></div>
+                <div style={{fontSize:9,color:'#94a3b8',transform:'rotate(-40deg)',transformOrigin:'top center',marginTop:8,whiteSpace:'nowrap'}}>{m.slice(0,3)}</div>
               </div>
             );
           })}
         </div>
       </div>
-
-      {/* Summary Table */}
-      <div style={{background:'var(--color-background-primary)',border:'0.5px solid var(--color-border-tertiary)',borderRadius:10,overflow:'hidden'}}>
-        <div style={{padding:'12px 16px',borderBottom:'0.5px solid var(--color-border-tertiary)',fontWeight:500,fontSize:14}}>Resumen mensual</div>
+      <div style={{background:'white',border:'1px solid #f1f5f9',borderRadius:10,overflow:'hidden'}}>
+        <div style={{padding:'12px 16px',borderBottom:'1px solid #f1f5f9',fontWeight:700,fontSize:14,color:'#0f172a'}}>Resumen mensual completo</div>
         <div style={{overflowX:'auto'}}>
           <table style={{width:'100%',borderCollapse:'collapse'}}>
-            <thead>
-              <tr>
-                {['Mes','Primas','Ingresos WEB','Inversión','ROI','Estado'].map(h=>(
-                  <th key={h} style={thS}>{h}</th>
-                ))}
-              </tr>
-            </thead>
+            <thead><tr>{['Mes','Primas','Ingresos WEB','Inversión ₡','Inversión $','ROI','Estado'].map(h=><th key={h} style={th}>{h}</th>)}</tr></thead>
             <tbody>
-              {summary.map(({m,prima,ing,inv,roi})=>(
-                <tr key={m}
-                  onMouseEnter={e=>e.currentTarget.style.background='var(--color-background-secondary)'}
-                  onMouseLeave={e=>e.currentTarget.style.background='transparent'}>
-                  <td style={{...tdS,fontWeight:500}}>{m}</td>
-                  <td style={{...tdS,fontFamily:'var(--font-mono)',fontSize:12}}>₡{fmtN(prima)}</td>
-                  <td style={{...tdS,fontFamily:'var(--font-mono)',fontSize:12,color:BLUE}}>₡{fmtN(ing)}</td>
-                  <td style={{...tdS,fontFamily:'var(--font-mono)',fontSize:12,color:'#dc2626'}}>₡{fmtN(inv)}</td>
-                  <td style={{...tdS,fontFamily:'var(--font-mono)',fontSize:12,color:roi>=0?'#15803d':'#dc2626'}}>
-                    {prima>0?`${roi>=0?'+':''}${roi.toFixed(1)}%`:'—'}
-                  </td>
-                  <td style={tdS}>
-                    {prima>0 ? <span style={{fontSize:11,padding:'2px 8px',borderRadius:10,background:'#f0fdf4',color:'#15803d',fontWeight:500}}>Con datos</span>
-                             : <span style={{fontSize:11,padding:'2px 8px',borderRadius:10,background:'var(--color-background-secondary)',color:'var(--color-text-secondary)'}}>Pendiente</span>}
-                  </td>
+              {s.map(({m,prima,ing,inv,usd,roi})=>(
+                <tr key={m} onMouseEnter={e=>e.currentTarget.style.background='#f8fafc'} onMouseLeave={e=>e.currentTarget.style.background='transparent'}>
+                  <td style={{...td,fontWeight:600}}>{m}</td>
+                  <td style={{...td,fontFamily:'monospace',fontSize:12}}>₡{fmtN(prima)}</td>
+                  <td style={{...td,fontFamily:'monospace',fontSize:12,color:BLUE}}>₡{fmtN(ing)}</td>
+                  <td style={{...td,fontFamily:'monospace',fontSize:12,color:'#dc2626'}}>₡{fmtN(inv)}</td>
+                  <td style={{...td,fontFamily:'monospace',fontSize:12,color:'#7c3aed'}}>${fmtN(usd)}</td>
+                  <td style={{...td,fontFamily:'monospace',fontSize:12,color:roi>=0?'#15803d':'#dc2626'}}>{prima>0?`${roi>=0?'+':''}${roi.toFixed(1)}%`:'—'}</td>
+                  <td style={td}>{prima>0?<span style={{fontSize:11,padding:'2px 8px',borderRadius:10,background:'#f0fdf4',color:'#15803d',fontWeight:600}}>✓ Con datos</span>:<span style={{fontSize:11,padding:'2px 8px',borderRadius:10,background:'#f8fafc',color:'#94a3b8'}}>Pendiente</span>}</td>
                 </tr>
               ))}
             </tbody>
-            <tfoot>
-              <tr style={{background:'var(--color-background-secondary)'}}>
-                <td style={{...tdS,fontWeight:500,borderTop:'1px solid var(--color-border-secondary)'}}>TOTAL</td>
-                <td style={{...tdS,fontFamily:'var(--font-mono)',fontSize:12,fontWeight:500,borderTop:'1px solid var(--color-border-secondary)'}}>₡{fmtN(totalPrima)}</td>
-                <td style={{...tdS,fontFamily:'var(--font-mono)',fontSize:12,fontWeight:500,color:BLUE,borderTop:'1px solid var(--color-border-secondary)'}}>₡{fmtN(totalIng)}</td>
-                <td style={{...tdS,fontFamily:'var(--font-mono)',fontSize:12,fontWeight:500,color:'#dc2626',borderTop:'1px solid var(--color-border-secondary)'}}>₡{fmtN(totalInv)}</td>
-                <td style={{...tdS,fontFamily:'var(--font-mono)',fontSize:12,fontWeight:500,color:'#15803d',borderTop:'1px solid var(--color-border-secondary)'}}>
-                  {totalInv>0?`+${((totalIng-totalInv)/totalInv*100).toFixed(1)}%`:'—'}
-                </td>
-                <td style={{...tdS,borderTop:'1px solid var(--color-border-secondary)'}}></td>
-              </tr>
-            </tfoot>
+            <tfoot><tr>
+              <td style={{...tot}}>TOTAL 2026</td>
+              <td style={{...tot,fontFamily:'monospace'}}>₡{fmtN(totP)}</td>
+              <td style={{...tot,fontFamily:'monospace',color:BLUE}}>₡{fmtN(totI)}</td>
+              <td style={{...tot,fontFamily:'monospace',color:'#dc2626'}}>₡{fmtN(totInv)}</td>
+              <td style={{...tot,fontFamily:'monospace',color:'#7c3aed'}}>${fmtN(totUSD)}</td>
+              <td style={{...tot,fontFamily:'monospace',color:'#15803d'}}>{totInv>0?`+${((totI-totInv)/totInv*100).toFixed(1)}%`:'—'}</td>
+              <td style={tot}></td>
+            </tr></tfoot>
           </table>
         </div>
       </div>
@@ -555,96 +539,89 @@ function ResumenView({months}) {
   );
 }
 
-export default function App() {
-  const [months, setMonths] = useState(null);
-  const [tab, setTab] = useState('Enero');
-  const [saving, setSaving] = useState(false);
-  const [saved, setSaved] = useState(false);
+function App(){
+  const [months,setMonths]=useState(null);
+  const [rates,setRates]=useState({...DEFAULT_COM});
+  const [tab,setTab]=useState('Enero');
+  const [status,setStatus]=useState('');
+  const [showTasas,setShowTasas]=useState(false);
+  const [exporting,setExporting]=useState(false);
 
   useEffect(()=>{
-    (async()=>{
-      try {
-        const stored = await window.storage.get('cvdata2026');
-        setMonths(stored?.value ? JSON.parse(stored.value) : INIT);
-      } catch { setMonths(INIT); }
-    })();
+    const sd=lsGet(STORAGE_KEY);
+    const sr=lsGet(RATES_KEY);
+    setMonths(sd||INIT);
+    if(sr) setRates(sr);
   },[]);
 
-  const save = useCallback(async(data)=>{
-    setSaving(true);
-    try { await window.storage.set('cvdata2026',JSON.stringify(data)); setSaved(true); setTimeout(()=>setSaved(false),2000); }
-    catch(e){ console.error(e); }
-    setSaving(false);
+  const save=useCallback((data,r)=>{
+    setStatus('Guardando...');
+    lsSet(STORAGE_KEY,data);
+    if(r) lsSet(RATES_KEY,r);
+    setStatus('✓ Guardado');
+    setTimeout(()=>setStatus(''),2000);
   },[]);
 
-  const updateMonths = useCallback((upd)=>{
-    setMonths(prev=>{
-      const next = typeof upd==='function' ? upd(prev) : upd;
-      save(next);
-      return next;
-    });
+  const updateMonths=useCallback((upd)=>{
+    setMonths(prev=>{const next=typeof upd==='function'?upd(prev):upd;save(next);return next;});
   },[save]);
 
-  if(!months) return (
-    <div style={{display:'flex',alignItems:'center',justifyContent:'center',height:200,color:'var(--color-text-secondary)'}}>
-      <div style={{textAlign:'center'}}>
-        <div style={{fontSize:20,marginBottom:8}}>⏳</div>
-        <div style={{fontSize:14}}>Cargando datos...</div>
-      </div>
-    </div>
-  );
+  const saveTasas=(nr)=>{setRates(nr);save(months,nr);setShowTasas(false);};
 
-  const totalAnual = MESES.reduce((s,m)=>s+(months[m]?.ventas||[]).reduce((ss,v)=>ss+Number(v.p||0),0),0);
-  const pctMeta = Math.min(100,(totalAnual/META)*100);
+  const handleExport=()=>{
+    setExporting(true);
+    setTimeout(()=>{try{exportToExcel(months,rates);}catch(e){alert('Error: '+e.message);}setExporting(false);},100);
+  };
 
-  return (
-    <div style={{minHeight:'100vh',background:'var(--color-background-tertiary)',fontFamily:'var(--font-sans)'}}>
-      {/* Header */}
-      <div style={{background:BLUE,color:'white',padding:'10px 20px',display:'flex',justifyContent:'space-between',alignItems:'center'}}>
-        <div style={{display:'flex',alignItems:'center',gap:12}}>
-          <div style={{width:36,height:36,borderRadius:8,background:'rgba(255,255,255,0.15)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:16}}>📊</div>
+  if(!months) return <div style={{display:'flex',alignItems:'center',justifyContent:'center',height:200,color:'#94a3b8',fontSize:14}}>Cargando...</div>;
+
+  const totAnual=MESES.reduce((s,m)=>s+(months[m]?.ventas||[]).reduce((ss,v)=>ss+Number(v.p||0),0),0);
+  const pct=Math.min(100,totAnual/META*100);
+
+  return(
+    <div style={{minHeight:'100vh',background:'#f8fafc',fontFamily:'-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif'}}>
+      <div style={{background:BLUE,color:'white',padding:'10px 16px',display:'flex',justifyContent:'space-between',alignItems:'center'}}>
+        <div style={{display:'flex',alignItems:'center',gap:10}}>
+          <div style={{width:34,height:34,borderRadius:8,background:'rgba(255,255,255,0.15)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:15}}>📊</div>
           <div>
-            <div style={{fontSize:15,fontWeight:500}}>Control de Ventas 2026</div>
+            <div style={{fontSize:14,fontWeight:700}}>Control de Ventas 2026</div>
             <div style={{fontSize:11,opacity:0.75}}>Seguros del INS · Agente Exclusivo</div>
           </div>
         </div>
-        <div style={{textAlign:'right'}}>
-          <div style={{fontSize:11,opacity:0.75}}>Meta anual</div>
-          <div style={{fontSize:14,fontWeight:500}}>{pctMeta.toFixed(1)}% · ₡{fmtN(totalAnual)}</div>
-          {(saving||saved) && <div style={{fontSize:10,opacity:0.7,marginTop:2}}>{saving?'Guardando...':'✓ Guardado'}</div>}
+        <div style={{display:'flex',alignItems:'center',gap:8}}>
+          <button onClick={()=>setShowTasas(true)} style={{padding:'6px 12px',borderRadius:6,border:'1px solid rgba(255,255,255,0.3)',background:'rgba(255,255,255,0.12)',color:'white',cursor:'pointer',fontSize:12,fontWeight:600}}>⚙️ Tasas</button>
+          <button onClick={handleExport} disabled={exporting} style={{padding:'6px 14px',borderRadius:6,border:'1px solid rgba(255,255,255,0.3)',background:'rgba(255,255,255,0.15)',color:'white',cursor:exporting?'wait':'pointer',fontSize:12,fontWeight:700}}>
+            {exporting?'⏳ Exportando...':'📥 Exportar Excel'}
+          </button>
+          <div style={{textAlign:'right',marginLeft:4}}>
+            <div style={{fontSize:13,fontWeight:700}}>{pct.toFixed(1)}% · ₡{fmtN(totAnual)}</div>
+            {status&&<div style={{fontSize:10,opacity:0.8}}>{status}</div>}
+          </div>
         </div>
       </div>
-
-      {/* Progress Bar */}
-      <div style={{height:4,background:`${BLUE}30`}}>
-        <div style={{width:`${pctMeta}%`,height:'100%',background:BLUE,transition:'width 0.5s'}}></div>
+      <div style={{height:5,background:'rgba(255,255,255,0.2)',position:'relative',overflow:'hidden'}}>
+        <div style={{position:'absolute',left:0,top:0,width:`${pct}%`,height:'100%',background:'#22c55e'}}></div>
       </div>
-
-      {/* Tabs */}
-      <div style={{background:'var(--color-background-primary)',borderBottom:'0.5px solid var(--color-border-tertiary)',display:'flex',overflowX:'auto',paddingLeft:8}}>
-        {[...MESES,'Resumen'].map((t,i)=>{
-          const active = tab===t;
-          const hasData = i<12 && (months[t]?.ventas?.length>0);
-          return (
-            <button key={t} onClick={()=>setTab(t)} style={{
-              padding:'10px 12px',fontSize:13,fontWeight:active?500:400,
-              color:active?BLUE:'var(--color-text-secondary)',
-              borderBottom:active?`2px solid ${BLUE}`:'2px solid transparent',
-              background:'none',border:'none',cursor:'pointer',
-              whiteSpace:'nowrap',borderRadius:0,position:'relative',outline:'none'
-            }}>
-              {i<12 ? t.slice(0,3) : '📈 Resumen'}
-              {hasData && !active && <span style={{position:'absolute',top:8,right:6,width:5,height:5,background:'#22c55e',borderRadius:'50%',display:'block'}}></span>}
+      <div style={{background:'white',borderBottom:'1px solid #f1f5f9',display:'flex',overflowX:'auto',paddingLeft:6}}>
+        {[...MESES,'📈 Resumen'].map((t,i)=>{
+          const tabKey=i<12?t:'Resumen';
+          const active=tab===tabKey;
+          const hasData=i<12&&(months[t]?.ventas?.length>0);
+          return(
+            <button key={tabKey} onClick={()=>setTab(tabKey)} style={{padding:'10px 11px',fontSize:12,fontWeight:active?700:400,color:active?BLUE:'#64748b',borderBottom:active?`2px solid ${BLUE}`:'2px solid transparent',background:'none',border:'none',cursor:'pointer',whiteSpace:'nowrap',borderRadius:0,outline:'none',position:'relative'}}>
+              {i<12?t.slice(0,3):t}
+              {hasData&&!active&&<span style={{position:'absolute',top:7,right:5,width:4,height:4,background:'#22c55e',borderRadius:'50%'}}></span>}
             </button>
           );
         })}
       </div>
-
-      {/* Content */}
-      {tab==='Resumen'
-        ? <ResumenView months={months}/>
-        : <MonthView mes={tab} data={months[tab]||{ventas:[],inv:[]}} updateMonths={updateMonths}/>
-      }
+      {tab==='Resumen'?<ResumenView months={months} rates={rates}/>:<MonthView mes={tab} data={months[tab]||{ventas:[],inv:[]}} updateMonths={updateMonths} rates={rates}/>}
+      {showTasas&&<TasasModal rates={rates} onSave={saveTasas} onClose={()=>setShowTasas(false)}/>}
     </div>
   );
 }
+
+ReactDOM.createRoot(document.getElementById('root')).render(<App/>);
+</script>
+</body>
+</html>
