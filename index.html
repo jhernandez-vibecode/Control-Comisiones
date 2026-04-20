@@ -51,20 +51,23 @@ const CLIENT_ID='446215450096-7aegmf643u1s5q9ob8f2i4cge3mvvd2g.apps.googleuserco
 const SCOPE='https://www.googleapis.com/auth/spreadsheets';
 let gToken=null;
 let tokenClient=null;
+let _tokenCallback=null; /* mutable ref — set by App, called when token arrives */
 
 /* localStorage cache — fallback when offline / before login */
 const lsGet=(k)=>{try{const v=localStorage.getItem(k);return v?JSON.parse(v):null;}catch{return null;}};
 const lsSet=(k,v)=>{try{localStorage.setItem(k,JSON.stringify(v));}catch{}};
 
-function initTokenClient(callback){
-  tokenClient=window.google?.accounts?.oauth2?.initTokenClient({
-    client_id:CLIENT_ID,scope:SCOPE,
+function initGIS(){
+  if(!window.google?.accounts?.oauth2) return false;
+  tokenClient=window.google.accounts.oauth2.initTokenClient({
+    client_id:CLIENT_ID, scope:SCOPE,
     callback:(resp)=>{
       if(resp.error){console.error('GIS error',resp);return;}
       gToken=resp.access_token;
-      callback(resp.access_token);
+      if(_tokenCallback) _tokenCallback();
     }
   });
+  return true;
 }
 
 async function gFetch(url,opts={}){
@@ -1085,18 +1088,20 @@ function App(){
   },[]);
 
   useEffect(()=>{
-    /* Wait for GIS to load, then init token client */
     const tryInit=()=>{
-      if(window.google?.accounts?.oauth2){
-        initTokenClient(()=>loadFromSheets());
-        /* Try silent token request — if user already authorized, this works instantly */
+      if(initGIS()){
+        /* First load: get token silently, then load from Sheets */
+        _tokenCallback=()=>{
+          _tokenCallback=null;
+          loadFromSheets();
+        };
         tokenClient.requestAccessToken({prompt:''});
       } else {
         setTimeout(tryInit,300);
       }
     };
     tryInit();
-  },[loadFromSheets]);
+  },[]); /* run once on mount */
 
   /* ---- SAVE (debounced 800ms) ---- */
   const save=useCallback((data,r)=>{
@@ -1136,9 +1141,24 @@ function App(){
   };
 
   const handleLogin=()=>{
-    if(!tokenClient){alert('Cargando Google... intente en un momento.');return;}
-    tokenClient.requestAccessToken({prompt:'consent'});
-    /* loadFromSheets is called in the callback */
+    if(!tokenClient){
+      /* GIS not loaded yet — try to init */
+      if(initGIS()) handleLogin();
+      else{alert('Cargando Google... intente en un momento.');return;}
+      return;
+    }
+    /* On reconnect: just get a fresh token, then resume syncing */
+    _tokenCallback=()=>{
+      _tokenCallback=null;
+      setAuthState('ready');
+      /* Write current local state to Sheets with new token */
+      const cur=lsGet('cvdata2026');
+      const curR=lsGet('cvrates2026');
+      if(cur) sheetsWrite(cur, curR||rates)
+        .then(()=>setSyncStatus('synced'))
+        .catch(()=>setSyncStatus('error'));
+    };
+    tokenClient.requestAccessToken({prompt:''});
   };
 
   /* ---- LOADING SCREEN ---- */
