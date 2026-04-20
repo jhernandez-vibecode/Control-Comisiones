@@ -539,6 +539,288 @@ function ResumenView({months,rates}){
   );
 }
 
+/* ================================================================
+   REFERENCE DATA 2025
+================================================================ */
+const REF2025_VIAJERO_QTY={Enero:2844,Febrero:1567,Marzo:2511,Abril:2975,Mayo:2468,Junio:2392,Julio:2646,Agosto:1611,Septiembre:2453,Octubre:2420,Noviembre:2103,Diciembre:3907};
+const REF2025_EST_QTY={Enero:411,Febrero:769,Marzo:361,Abril:399,Mayo:556,Junio:752,Julio:526,Agosto:623,Septiembre:943,Octubre:655,Noviembre:1383,Diciembre:6376};
+const REF2025_EST_PRIMA={Enero:4319862,Febrero:7650947,Marzo:3382535,Abril:3381351,Mayo:4765683,Junio:6000049,Julio:4369617,Agosto:5028939,Septiembre:7318812,Octubre:5336400,Noviembre:13020714,Diciembre:59884782};
+
+/* Parse quantity from batch name, e.g. "COMPRAS DIRECTAS WEB IQ ENERO (1846)" → 1846 */
+const parseQty=(name)=>{const m=name.match(/\((\d+)\)/);return m?Number(m[1]):0;};
+
+/* ================================================================
+   META VIAJERO VIEW
+================================================================ */
+function MetaViajeroView({months,rates}){
+  /* Collect all viajero records month by month */
+  const byMonth=MESES.map(m=>{
+    const ventas=(months[m]?.ventas||[]).filter(v=>v.l==='Viajero Asistencia');
+    const qty=ventas.reduce((s,v)=>s+parseQty(v.c),0);
+    const prima=ventas.reduce((s,v)=>s+Number(v.p||0),0);
+    const com=ventas.reduce((s,v)=>s+calcCom(Number(v.p||0),v.l,rates),0);
+    return{m,ventas,qty,prima,com};
+  });
+  const totQty26=byMonth.reduce((s,r)=>s+r.qty,0);
+  const totPrima26=byMonth.reduce((s,r)=>s+r.prima,0);
+  const totCom26=byMonth.reduce((s,r)=>s+r.com,0);
+  const totQty25=Object.values(REF2025_VIAJERO_QTY).reduce((s,v)=>s+v,0);
+  const pctQty=totQty25>0?(totQty26/totQty25*100):0;
+  const GREEN='#059669';
+  const maxQ=Math.max(...byMonth.map(r=>r.qty),1,...Object.values(REF2025_VIAJERO_QTY));
+
+  const th={padding:'8px 10px',fontSize:11,fontWeight:600,color:'#64748b',textAlign:'left',borderBottom:'1px solid #f1f5f9',background:'#f8fafc',whiteSpace:'nowrap'};
+  const td={padding:'9px 10px',fontSize:13,borderBottom:'1px solid #f8fafc',color:'#1e293b'};
+  const tot={padding:'9px 10px',fontSize:13,fontWeight:700,borderTop:'2px solid #e2e8f0',background:'#f8fafc'};
+
+  return(
+    <div style={{padding:14,maxWidth:1100}}>
+      {/* Header KPIs */}
+      <div style={{display:'grid',gridTemplateColumns:'repeat(4,1fr)',gap:8,marginBottom:14}}>
+        {[
+          {l:'Pólizas 2026',v:fmtN(totQty26),c:'#0f172a'},
+          {l:'Prima Total 2026',v:`₡${fmtN(totPrima26)}`,c:GREEN},
+          {l:'Ingresos WEB (17%)',v:`₡${fmtN(totCom26)}`,c:BLUE},
+          {l:'vs 2025 ('+fmtN(totQty25)+' pól.)',v:`${pctQty.toFixed(1)}%`,c:pctQty>=100?'#15803d':'#d97706'},
+        ].map(({l,v,c})=>(
+          <div key={l} style={{background:'white',border:'1px solid #f1f5f9',borderRadius:8,padding:'12px 14px'}}>
+            <div style={{fontSize:10,color:'#94a3b8',marginBottom:3,textTransform:'uppercase',letterSpacing:'0.05em'}}>{l}</div>
+            <div style={{fontSize:18,fontWeight:700,color:c}}>{v}</div>
+          </div>
+        ))}
+      </div>
+
+      {/* Comparison chart */}
+      <div style={{background:'white',border:'1px solid #f1f5f9',borderRadius:10,padding:'16px 20px',marginBottom:14}}>
+        <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:16}}>
+          <span style={{fontSize:12,fontWeight:600,color:'#64748b',textTransform:'uppercase',letterSpacing:'0.04em'}}>Pólizas por mes — 2025 vs 2026</span>
+          <div style={{display:'flex',gap:16,fontSize:11,color:'#64748b'}}>
+            <span style={{display:'flex',alignItems:'center',gap:5}}><span style={{width:10,height:10,borderRadius:2,background:'#d1fae5',border:'1px solid #6ee7b7',display:'inline-block'}}></span>2025</span>
+            <span style={{display:'flex',alignItems:'center',gap:5}}><span style={{width:10,height:10,borderRadius:2,background:GREEN,display:'inline-block'}}></span>2026</span>
+          </div>
+        </div>
+        <div style={{display:'flex',alignItems:'flex-end',gap:4,height:140}}>
+          {MESES.map((m,i)=>{
+            const q26=byMonth[i].qty;
+            const q25=REF2025_VIAJERO_QTY[m]||0;
+            const h26=q26>0?Math.max(4,q26/maxQ*110):2;
+            const h25=q25>0?Math.max(4,q25/maxQ*110):2;
+            return(
+              <div key={m} style={{flex:1,display:'flex',flexDirection:'column',alignItems:'center',gap:2}}>
+                <div style={{width:'100%',display:'flex',gap:2,alignItems:'flex-end',height:114}}>
+                  <div style={{flex:1,height:h25,background:'#d1fae5',border:'1px solid #6ee7b7',borderRadius:'2px 2px 0 0'}} title={`2025: ${q25}`}></div>
+                  <div style={{flex:1,height:h26,background:q26>0?GREEN:'#e2e8f0',borderRadius:'2px 2px 0 0'}} title={`2026: ${q26}`}></div>
+                </div>
+                <div style={{fontSize:9,color:'#94a3b8',transform:'rotate(-40deg)',transformOrigin:'top center',marginTop:8,whiteSpace:'nowrap'}}>{m.slice(0,3)}</div>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* Monthly detail table */}
+      <div style={{background:'white',border:'1px solid #f1f5f9',borderRadius:10,overflow:'hidden'}}>
+        <div style={{padding:'12px 16px',borderBottom:'1px solid #f1f5f9',fontWeight:700,fontSize:14,color:'#0f172a'}}>Detalle por mes — Viajero Asistencia 2026</div>
+        <div style={{overflowX:'auto'}}>
+          <table style={{width:'100%',borderCollapse:'collapse'}}>
+            <thead><tr>{['Mes','Lote / Descripción','Pólizas 2026','Pólizas 2025','Δ vs 2025','Prima','Ingresos WEB'].map(h=><th key={h} style={th}>{h}</th>)}</tr></thead>
+            <tbody>
+              {byMonth.map(({m,ventas,qty,prima,com})=>{
+                const q25=REF2025_VIAJERO_QTY[m]||0;
+                const delta=qty-q25;
+                const hasData=ventas.length>0;
+                if(!hasData) return(
+                  <tr key={m}>
+                    <td style={{...td,fontWeight:600,color:'#94a3b8'}}>{m}</td>
+                    <td style={{...td,color:'#94a3b8',fontSize:12}} colSpan={4}>Sin datos</td>
+                    <td style={td}></td>
+                    <td style={td}></td>
+                  </tr>
+                );
+                return ventas.map((v,vi)=>(
+                  <tr key={v.id} onMouseEnter={e=>e.currentTarget.style.background='#f8fafc'} onMouseLeave={e=>e.currentTarget.style.background='transparent'}>
+                    <td style={{...td,fontWeight:600,color:vi>0?'transparent':'#0f172a'}}>{vi===0?m:''}</td>
+                    <td style={{...td,fontSize:12,maxWidth:260}}><div style={{overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{v.c}</div></td>
+                    <td style={{...td,textAlign:'right',fontFamily:'monospace',fontSize:12,color:GREEN,fontWeight:600}}>{fmtN(parseQty(v.c))}</td>
+                    <td style={{...td,textAlign:'right',fontFamily:'monospace',fontSize:12,color:'#94a3b8'}}>{vi===0?fmtN(q25):'—'}</td>
+                    <td style={{...td,textAlign:'right',fontFamily:'monospace',fontSize:12,color:delta>=0?'#15803d':'#dc2626'}}>{vi===0?(delta>=0?'+':'')+fmtN(delta):'—'}</td>
+                    <td style={{...td,textAlign:'right',fontFamily:'monospace',fontSize:12}}>₡{fmtN(v.p)}</td>
+                    <td style={{...td,textAlign:'right',fontFamily:'monospace',fontSize:12,color:BLUE}}>₡{fmtN(calcCom(v.p,v.l,rates))}</td>
+                  </tr>
+                ));
+              })}
+            </tbody>
+            <tfoot><tr>
+              <td colSpan={2} style={{...tot,color:'#64748b'}}>TOTAL 2026</td>
+              <td style={{...tot,textAlign:'right',fontFamily:'monospace',color:GREEN}}>{fmtN(totQty26)}</td>
+              <td style={{...tot,textAlign:'right',fontFamily:'monospace',color:'#94a3b8'}}>{fmtN(totQty25)}</td>
+              <td style={{...tot,textAlign:'right',fontFamily:'monospace',color:totQty26>=totQty25?'#15803d':'#dc2626'}}>{totQty26>=totQty25?'+':''}{fmtN(totQty26-totQty25)}</td>
+              <td style={{...tot,textAlign:'right',fontFamily:'monospace'}}>₡{fmtN(totPrima26)}</td>
+              <td style={{...tot,textAlign:'right',fontFamily:'monospace',color:BLUE}}>₡{fmtN(totCom26)}</td>
+            </tr></tfoot>
+          </table>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ================================================================
+   ESTUDIANTIL ANUAL VIEW
+================================================================ */
+function EstudiantilView({months,rates}){
+  const byMonth=MESES.map(m=>{
+    const ventas=(months[m]?.ventas||[]).filter(v=>v.l==='Estudiantil Individual');
+    const qty=ventas.reduce((s,v)=>s+parseQty(v.c),0);
+    const prima=ventas.reduce((s,v)=>s+Number(v.p||0),0);
+    const com=ventas.reduce((s,v)=>s+calcCom(Number(v.p||0),v.l,rates),0);
+    return{m,ventas,qty,prima,com};
+  });
+  const totQty26=byMonth.reduce((s,r)=>s+r.qty,0);
+  const totPrima26=byMonth.reduce((s,r)=>s+r.prima,0);
+  const totCom26=byMonth.reduce((s,r)=>s+r.com,0);
+  const totQty25=Object.values(REF2025_EST_QTY).reduce((s,v)=>s+v,0);
+  const totPrima25=Object.values(REF2025_EST_PRIMA).reduce((s,v)=>s+v,0);
+  const pctQty=totQty25>0?(totQty26/totQty25*100):0;
+  const pctPrima=totPrima25>0?(totPrima26/totPrima25*100):0;
+  const AMBER='#d97706';
+  const maxQ=Math.max(...byMonth.map(r=>r.qty),1,...Object.values(REF2025_EST_QTY));
+
+  const th={padding:'8px 10px',fontSize:11,fontWeight:600,color:'#64748b',textAlign:'left',borderBottom:'1px solid #f1f5f9',background:'#f8fafc',whiteSpace:'nowrap'};
+  const td={padding:'9px 10px',fontSize:13,borderBottom:'1px solid #f8fafc',color:'#1e293b'};
+  const tot={padding:'9px 10px',fontSize:13,fontWeight:700,borderTop:'2px solid #e2e8f0',background:'#f8fafc'};
+
+  return(
+    <div style={{padding:14,maxWidth:1100}}>
+      {/* KPIs */}
+      <div style={{display:'grid',gridTemplateColumns:'repeat(5,1fr)',gap:8,marginBottom:14}}>
+        {[
+          {l:'Pólizas 2026',v:fmtN(totQty26),c:'#0f172a'},
+          {l:'Prima 2026',v:`₡${fmtN(totPrima26)}`,c:AMBER},
+          {l:'Ingresos WEB (18.5%)',v:`₡${fmtN(totCom26)}`,c:BLUE},
+          {l:'Avance vs 2025 (qty)',v:`${pctQty.toFixed(1)}%`,c:pctQty>=100?'#15803d':'#d97706'},
+          {l:'Avance vs 2025 (prima)',v:`${pctPrima.toFixed(1)}%`,c:pctPrima>=100?'#15803d':'#d97706'},
+        ].map(({l,v,c})=>(
+          <div key={l} style={{background:'white',border:'1px solid #f1f5f9',borderRadius:8,padding:'10px 12px'}}>
+            <div style={{fontSize:10,color:'#94a3b8',marginBottom:3,textTransform:'uppercase',letterSpacing:'0.05em'}}>{l}</div>
+            <div style={{fontSize:16,fontWeight:700,color:c}}>{v}</div>
+          </div>
+        ))}
+      </div>
+
+      {/* Progress vs 2025 */}
+      <div style={{background:'white',border:'1px solid #f1f5f9',borderRadius:10,padding:'16px 20px',marginBottom:14}}>
+        <div style={{fontSize:12,fontWeight:600,color:'#64748b',textTransform:'uppercase',letterSpacing:'0.04em',marginBottom:14}}>Progreso vs año anterior</div>
+        <div style={{marginBottom:12}}>
+          <div style={{display:'flex',justifyContent:'space-between',fontSize:12,color:'#64748b',marginBottom:4}}>
+            <span>Pólizas: {fmtN(totQty26)} de {fmtN(totQty25)} en 2025</span>
+            <span style={{fontWeight:600,color:AMBER}}>{pctQty.toFixed(1)}%</span>
+          </div>
+          <div style={{height:10,background:'#fef3c7',borderRadius:5,overflow:'hidden'}}>
+            <div style={{width:`${Math.min(100,pctQty)}%`,height:'100%',background:AMBER,borderRadius:5}}></div>
+          </div>
+        </div>
+        <div>
+          <div style={{display:'flex',justifyContent:'space-between',fontSize:12,color:'#64748b',marginBottom:4}}>
+            <span>Prima: ₡{fmtN(totPrima26)} de ₡{fmtN(totPrima25)} en 2025</span>
+            <span style={{fontWeight:600,color:BLUE}}>{pctPrima.toFixed(1)}%</span>
+          </div>
+          <div style={{height:10,background:'#e0f2fe',borderRadius:5,overflow:'hidden'}}>
+            <div style={{width:`${Math.min(100,pctPrima)}%`,height:'100%',background:BLUE,borderRadius:5}}></div>
+          </div>
+        </div>
+      </div>
+
+      {/* Chart */}
+      <div style={{background:'white',border:'1px solid #f1f5f9',borderRadius:10,padding:'16px 20px',marginBottom:14}}>
+        <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:16}}>
+          <span style={{fontSize:12,fontWeight:600,color:'#64748b',textTransform:'uppercase',letterSpacing:'0.04em'}}>Pólizas por mes — 2025 vs 2026</span>
+          <div style={{display:'flex',gap:16,fontSize:11,color:'#64748b'}}>
+            <span style={{display:'flex',alignItems:'center',gap:5}}><span style={{width:10,height:10,borderRadius:2,background:'#fde68a',border:'1px solid #fcd34d',display:'inline-block'}}></span>2025</span>
+            <span style={{display:'flex',alignItems:'center',gap:5}}><span style={{width:10,height:10,borderRadius:2,background:AMBER,display:'inline-block'}}></span>2026</span>
+          </div>
+        </div>
+        <div style={{display:'flex',alignItems:'flex-end',gap:4,height:140}}>
+          {MESES.map((m,i)=>{
+            const q26=byMonth[i].qty;
+            const q25=REF2025_EST_QTY[m]||0;
+            const h26=q26>0?Math.max(4,q26/maxQ*110):2;
+            const h25=q25>0?Math.max(4,q25/maxQ*110):2;
+            return(
+              <div key={m} style={{flex:1,display:'flex',flexDirection:'column',alignItems:'center',gap:2}}>
+                <div style={{width:'100%',display:'flex',gap:2,alignItems:'flex-end',height:114}}>
+                  <div style={{flex:1,height:h25,background:'#fde68a',border:'1px solid #fcd34d',borderRadius:'2px 2px 0 0'}} title={`2025: ${q25}`}></div>
+                  <div style={{flex:1,height:h26,background:q26>0?AMBER:'#e2e8f0',borderRadius:'2px 2px 0 0'}} title={`2026: ${q26}`}></div>
+                </div>
+                <div style={{fontSize:9,color:'#94a3b8',transform:'rotate(-40deg)',transformOrigin:'top center',marginTop:8,whiteSpace:'nowrap'}}>{m.slice(0,3)}</div>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* Table */}
+      <div style={{background:'white',border:'1px solid #f1f5f9',borderRadius:10,overflow:'hidden'}}>
+        <div style={{padding:'12px 16px',borderBottom:'1px solid #f1f5f9',fontWeight:700,fontSize:14,color:'#0f172a'}}>Detalle por mes — Estudiantil Individual 2026</div>
+        <div style={{overflowX:'auto'}}>
+          <table style={{width:'100%',borderCollapse:'collapse'}}>
+            <thead><tr>{['Mes','Lote / Descripción','Pólizas 2026','Pólizas 2025','Δ vs 2025','Prima 2026','Prima 2025','Ingresos WEB'].map(h=><th key={h} style={th}>{h}</th>)}</tr></thead>
+            <tbody>
+              {byMonth.map(({m,ventas,qty,prima,com})=>{
+                const q25=REF2025_EST_QTY[m]||0;
+                const p25=REF2025_EST_PRIMA[m]||0;
+                const delta=qty-q25;
+                if(ventas.length===0) return(
+                  <tr key={m}>
+                    <td style={{...td,fontWeight:600,color:'#94a3b8'}}>{m}</td>
+                    <td style={{...td,color:'#94a3b8',fontSize:12}}>Sin datos</td>
+                    <td style={td}></td>
+                    <td style={{...td,textAlign:'right',fontFamily:'monospace',fontSize:12,color:'#94a3b8'}}>{fmtN(q25)}</td>
+                    <td style={td}></td>
+                    <td style={td}></td>
+                    <td style={{...td,textAlign:'right',fontFamily:'monospace',fontSize:12,color:'#94a3b8'}}>₡{fmtN(p25)}</td>
+                    <td style={td}></td>
+                  </tr>
+                );
+                return ventas.map((v,vi)=>(
+                  <tr key={v.id} onMouseEnter={e=>e.currentTarget.style.background='#f8fafc'} onMouseLeave={e=>e.currentTarget.style.background='transparent'}>
+                    <td style={{...td,fontWeight:600,color:vi>0?'transparent':'#0f172a'}}>{vi===0?m:''}</td>
+                    <td style={{...td,fontSize:12,maxWidth:240}}><div style={{overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{v.c}</div></td>
+                    <td style={{...td,textAlign:'right',fontFamily:'monospace',fontSize:12,color:AMBER,fontWeight:600}}>{fmtN(parseQty(v.c))}</td>
+                    <td style={{...td,textAlign:'right',fontFamily:'monospace',fontSize:12,color:'#94a3b8'}}>{vi===0?fmtN(q25):'—'}</td>
+                    <td style={{...td,textAlign:'right',fontFamily:'monospace',fontSize:12,color:delta>=0?'#15803d':'#dc2626'}}>{vi===0?(delta>=0?'+':'')+fmtN(delta):'—'}</td>
+                    <td style={{...td,textAlign:'right',fontFamily:'monospace',fontSize:12}}>₡{fmtN(v.p)}</td>
+                    <td style={{...td,textAlign:'right',fontFamily:'monospace',fontSize:12,color:'#94a3b8'}}>{vi===0?`₡${fmtN(p25)}`:'—'}</td>
+                    <td style={{...td,textAlign:'right',fontFamily:'monospace',fontSize:12,color:BLUE}}>₡{fmtN(calcCom(v.p,v.l,rates))}</td>
+                  </tr>
+                ));
+              })}
+            </tbody>
+            <tfoot><tr>
+              <td colSpan={2} style={{...tot,color:'#64748b'}}>TOTAL 2026</td>
+              <td style={{...tot,textAlign:'right',fontFamily:'monospace',color:AMBER}}>{fmtN(totQty26)}</td>
+              <td style={{...tot,textAlign:'right',fontFamily:'monospace',color:'#94a3b8'}}>{fmtN(totQty25)}</td>
+              <td style={{...tot,textAlign:'right',fontFamily:'monospace',color:totQty26>=totQty25?'#15803d':'#dc2626'}}>{totQty26>=totQty25?'+':''}{fmtN(totQty26-totQty25)}</td>
+              <td style={{...tot,textAlign:'right',fontFamily:'monospace'}}>₡{fmtN(totPrima26)}</td>
+              <td style={{...tot,textAlign:'right',fontFamily:'monospace',color:'#94a3b8'}}>₡{fmtN(totPrima25)}</td>
+              <td style={{...tot,textAlign:'right',fontFamily:'monospace',color:BLUE}}>₡{fmtN(totCom26)}</td>
+            </tr></tfoot>
+          </table>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ================================================================
+   APP
+================================================================ */
+const EXTRA_TABS=[
+  {key:'MetaViajero',label:'🛫 Viajero'},
+  {key:'Estudiantil',label:'🎓 Estudiantil'},
+  {key:'Resumen',label:'📈 Resumen'},
+];
+
 function App(){
   const [months,setMonths]=useState(null);
   const [rates,setRates]=useState({...DEFAULT_COM});
@@ -577,6 +859,7 @@ function App(){
 
   const totAnual=MESES.reduce((s,m)=>s+(months[m]?.ventas||[]).reduce((ss,v)=>ss+Number(v.p||0),0),0);
   const pct=Math.min(100,totAnual/META*100);
+  const extraKeys=EXTRA_TABS.map(t=>t.key);
 
   return(
     <div style={{minHeight:'100vh',background:'#f8fafc',fontFamily:'-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif'}}>
@@ -602,20 +885,34 @@ function App(){
       <div style={{height:5,background:'rgba(255,255,255,0.2)',position:'relative',overflow:'hidden'}}>
         <div style={{position:'absolute',left:0,top:0,width:`${pct}%`,height:'100%',background:'#22c55e'}}></div>
       </div>
+      {/* Tab bar */}
       <div style={{background:'white',borderBottom:'1px solid #f1f5f9',display:'flex',overflowX:'auto',paddingLeft:6}}>
-        {[...MESES,'📈 Resumen'].map((t,i)=>{
-          const tabKey=i<12?t:'Resumen';
-          const active=tab===tabKey;
-          const hasData=i<12&&(months[t]?.ventas?.length>0);
+        {MESES.map(m=>{
+          const active=tab===m;
+          const hasData=(months[m]?.ventas?.length>0);
           return(
-            <button key={tabKey} onClick={()=>setTab(tabKey)} style={{padding:'10px 11px',fontSize:12,fontWeight:active?700:400,color:active?BLUE:'#64748b',borderBottom:active?`2px solid ${BLUE}`:'2px solid transparent',background:'none',border:'none',cursor:'pointer',whiteSpace:'nowrap',borderRadius:0,outline:'none',position:'relative'}}>
-              {i<12?t.slice(0,3):t}
+            <button key={m} onClick={()=>setTab(m)} style={{padding:'10px 11px',fontSize:12,fontWeight:active?700:400,color:active?BLUE:'#64748b',borderBottom:active?`2px solid ${BLUE}`:'2px solid transparent',background:'none',border:'none',cursor:'pointer',whiteSpace:'nowrap',borderRadius:0,outline:'none',position:'relative'}}>
+              {m.slice(0,3)}
               {hasData&&!active&&<span style={{position:'absolute',top:7,right:5,width:4,height:4,background:'#22c55e',borderRadius:'50%'}}></span>}
             </button>
           );
         })}
+        {/* Divider */}
+        <div style={{width:1,background:'#f1f5f9',margin:'8px 4px'}}></div>
+        {EXTRA_TABS.map(({key,label})=>{
+          const active=tab===key;
+          return(
+            <button key={key} onClick={()=>setTab(key)} style={{padding:'10px 12px',fontSize:12,fontWeight:active?700:400,color:active?(key==='MetaViajero'?'#059669':key==='Estudiantil'?'#d97706':BLUE):'#64748b',borderBottom:active?`2px solid ${key==='MetaViajero'?'#059669':key==='Estudiantil'?'#d97706':BLUE}`:'2px solid transparent',background:'none',border:'none',cursor:'pointer',whiteSpace:'nowrap',borderRadius:0,outline:'none'}}>
+              {label}
+            </button>
+          );
+        })}
       </div>
-      {tab==='Resumen'?<ResumenView months={months} rates={rates}/>:<MonthView mes={tab} data={months[tab]||{ventas:[],inv:[]}} updateMonths={updateMonths} rates={rates}/>}
+      {/* Content routing */}
+      {tab==='Resumen'&&<ResumenView months={months} rates={rates}/>}
+      {tab==='MetaViajero'&&<MetaViajeroView months={months} rates={rates}/>}
+      {tab==='Estudiantil'&&<EstudiantilView months={months} rates={rates}/>}
+      {!extraKeys.includes(tab)&&<MonthView mes={tab} data={months[tab]||{ventas:[],inv:[]}} updateMonths={updateMonths} rates={rates}/>}
       {showTasas&&<TasasModal rates={rates} onSave={saveTasas} onClose={()=>setShowTasas(false)}/>}
     </div>
   );
