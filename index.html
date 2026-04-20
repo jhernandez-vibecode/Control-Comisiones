@@ -44,7 +44,7 @@ const lsSet=(k,v)=>{try{localStorage.setItem(k,JSON.stringify(v));}catch{}};
 
 const INIT=(()=>{
   const d={};
-  MESES.forEach(m=>d[m]={ventas:[],inv:[]});
+  MESES.forEach(m=>d[m]={ventas:[],inv:[],tc:505});
   d.Enero.ventas=[
     {id:'e1a',c:'3-101-746921 S.A',l:'AUTOMOVILES',f:'SEMESTRAL',p:279977,v:'CARTERA'},
     {id:'e1b',c:'SOLANO BOLAÑOS HAZEL MARIA',l:'AUTOMOVILES',f:'TRIMESTRAL',p:149113,v:'WEB'},
@@ -348,12 +348,23 @@ function InvModal({row,onSave,onDelete,onClose}){
 function MonthView({mes,data,updateMonths,rates}){
   const [vm,setVm]=useState(null);
   const [im,setIm]=useState(null);
+  const [tcEdit,setTcEdit]=useState(false);
   const ventas=data.ventas||[],inv=data.inv||[];
+  const tc=Number(data.tc)||505;
   const totalP=ventas.reduce((s,v)=>s+Number(v.p||0),0);
   const totalCom=ventas.reduce((s,v)=>s+calcCom(Number(v.p||0),v.l,rates),0);
   const totalCol=inv.reduce((s,r)=>s+Number(r.col||0),0);
   const totalUSD=inv.reduce((s,r)=>s+Number(r.usd||0),0);
   const roi=totalCol>0?(totalCom-totalCol)/totalCol*100:0;
+
+  /* Viajero stats in USD */
+  const viajeroVentas=ventas.filter(v=>v.l==='Viajero Asistencia');
+  const viajeroQty=viajeroVentas.reduce((s,v)=>s+parseQty(v.c),0);
+  const viajeroPrimaCol=viajeroVentas.reduce((s,v)=>s+Number(v.p||0),0);
+  const viajeroPrimaUSD=tc>0?viajeroPrimaCol/tc:0;
+  const viajeroComUSD=tc>0?viajeroVentas.reduce((s,v)=>s+calcCom(Number(v.p||0),v.l,rates),0)/tc:0;
+
+  const updateTC=(val)=>updateMonths(prev=>({...prev,[mes]:{...prev[mes],tc:Number(val)||505}}));
   const saveV=v=>{updateMonths(prev=>{const list=prev[mes].ventas,idx=list.findIndex(x=>x.id===v.id),next=idx>=0?list.map(x=>x.id===v.id?v:x):[...list,v];return{...prev,[mes]:{...prev[mes],ventas:next}}});setVm(null)};
   const delV=id=>{updateMonths(prev=>({...prev,[mes]:{...prev[mes],ventas:prev[mes].ventas.filter(x=>x.id!==id)}}));setVm(null)};
   const saveI=r=>{updateMonths(prev=>{const list=prev[mes].inv,idx=list.findIndex(x=>x.id===r.id),next=idx>=0?list.map(x=>x.id===r.id?r:x):[...list,r].sort((a,b)=>a.fecha.localeCompare(b.fecha));return{...prev,[mes]:{...prev[mes],inv:next}}});setIm(null)};
@@ -363,14 +374,44 @@ function MonthView({mes,data,updateMonths,rates}){
   const tot={padding:'9px 10px',fontSize:13,fontWeight:700,borderTop:'2px solid #e2e8f0',background:'#f8fafc'};
   return(
     <div style={{padding:14,maxWidth:1400}}>
-      <div style={{display:'grid',gridTemplateColumns:'repeat(5,1fr)',gap:8,marginBottom:14}}>
+      {/* KPI row with TC card */}
+      <div style={{display:'grid',gridTemplateColumns:'repeat(5,1fr) auto',gap:8,marginBottom:14,alignItems:'stretch'}}>
         {[{l:'Prima Total',v:`₡${fmtN(totalP)}`,c:'#0f172a'},{l:'Ingresos WEB',v:`₡${fmtN(totalCom)}`,c:BLUE},{l:'Inversión ADS ₡',v:`₡${fmtN(totalCol)}`,c:'#dc2626'},{l:'Inversión ADS $',v:`$${fmtN(totalUSD)}`,c:'#7c3aed'},{l:'ROI',v:`${roi>=0?'+':''}${roi.toFixed(1)}%`,c:roi>=0?'#15803d':'#dc2626'}].map(({l,v,c})=>(
           <div key={l} style={{background:'white',border:'1px solid #f1f5f9',borderRadius:8,padding:'10px 12px'}}>
             <div style={{fontSize:10,color:'#94a3b8',marginBottom:3,textTransform:'uppercase',letterSpacing:'0.05em'}}>{l}</div>
             <div style={{fontSize:16,fontWeight:700,color:c}}>{v}</div>
           </div>
         ))}
+        {/* TC editable card */}
+        <div style={{background:'#fffbeb',border:'1px solid #fde68a',borderRadius:8,padding:'10px 12px',minWidth:130}}>
+          <div style={{fontSize:10,color:'#92400e',marginBottom:3,textTransform:'uppercase',letterSpacing:'0.05em'}}>TC del mes ₡/$</div>
+          {tcEdit
+            ? <input type="number" autoFocus defaultValue={tc} onBlur={e=>{updateTC(e.target.value);setTcEdit(false);}} onKeyDown={e=>{if(e.key==='Enter'){updateTC(e.target.value);setTcEdit(false);}}} style={{width:'100%',fontSize:16,fontWeight:700,color:'#92400e',border:'none',background:'transparent',outline:'none',fontFamily:'monospace'}}/>
+            : <div onClick={()=>setTcEdit(true)} style={{fontSize:16,fontWeight:700,color:'#92400e',cursor:'pointer',display:'flex',alignItems:'center',gap:6}}>
+                {fmtN(tc)} <span style={{fontSize:11,opacity:0.6}}>✏️</span>
+              </div>
+          }
+        </div>
       </div>
+
+      {/* Viajero USD summary bar — only shown when there are viajero records */}
+      {viajeroVentas.length>0&&(
+        <div style={{background:'#f0fdf4',border:'1px solid #bbf7d0',borderRadius:8,padding:'10px 16px',marginBottom:14,display:'flex',gap:24,alignItems:'center',flexWrap:'wrap'}}>
+          <div style={{fontSize:12,fontWeight:700,color:'#15803d',display:'flex',alignItems:'center',gap:6}}>🛫 Viajero en USD <span style={{fontWeight:400,color:'#64748b'}}>TC: ₡{fmtN(tc)}</span></div>
+          {[
+            {l:'Pólizas',v:fmtN(viajeroQty)},
+            {l:'Prima',v:`$${Number(viajeroPrimaUSD.toFixed(2)).toLocaleString('es-CR')}`,c:'#15803d'},
+            {l:'Ingresos WEB (17%)',v:`$${Number(viajeroComUSD.toFixed(2)).toLocaleString('es-CR')}`,c:BLUE},
+          ].map(({l,v,c})=>(
+            <div key={l}>
+              <div style={{fontSize:10,color:'#94a3b8',textTransform:'uppercase',letterSpacing:'0.04em'}}>{l}</div>
+              <div style={{fontSize:15,fontWeight:700,color:c||'#0f172a'}}>{v}</div>
+            </div>
+          ))}
+          <div style={{marginLeft:'auto',fontSize:11,color:'#94a3b8'}}>En colones: ₡{fmtN(viajeroPrimaCol)}</div>
+        </div>
+      )}
+
       <div style={{display:'grid',gridTemplateColumns:'1fr 300px',gap:12,alignItems:'start'}}>
         <div style={{background:'white',border:'1px solid #f1f5f9',borderRadius:10,overflow:'hidden'}}>
           <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',padding:'12px 14px',borderBottom:'1px solid #f1f5f9'}}>
@@ -550,23 +591,29 @@ const REF2025_EST_PRIMA={Enero:4319862,Febrero:7650947,Marzo:3382535,Abril:33813
 const parseQty=(name)=>{const m=name.match(/\((\d+)\)/);return m?Number(m[1]):0;};
 
 /* ================================================================
-   META VIAJERO VIEW
+   META VIAJERO VIEW  — totales en USD usando TC por mes
 ================================================================ */
 function MetaViajeroView({months,rates}){
-  /* Collect all viajero records month by month */
+  const GREEN='#059669';
+  /* Collect viajero records with per-month TC conversion */
   const byMonth=MESES.map(m=>{
     const ventas=(months[m]?.ventas||[]).filter(v=>v.l==='Viajero Asistencia');
+    const tc=Number(months[m]?.tc)||505;
     const qty=ventas.reduce((s,v)=>s+parseQty(v.c),0);
-    const prima=ventas.reduce((s,v)=>s+Number(v.p||0),0);
-    const com=ventas.reduce((s,v)=>s+calcCom(Number(v.p||0),v.l,rates),0);
-    return{m,ventas,qty,prima,com};
+    const primaCol=ventas.reduce((s,v)=>s+Number(v.p||0),0);
+    const primaUSD=tc>0?primaCol/tc:0;
+    const comCol=ventas.reduce((s,v)=>s+calcCom(Number(v.p||0),v.l,rates),0);
+    const comUSD=tc>0?comCol/tc:0;
+    return{m,ventas,qty,primaCol,primaUSD,comCol,comUSD,tc};
   });
+
   const totQty26=byMonth.reduce((s,r)=>s+r.qty,0);
-  const totPrima26=byMonth.reduce((s,r)=>s+r.prima,0);
-  const totCom26=byMonth.reduce((s,r)=>s+r.com,0);
+  const totPrimaUSD=byMonth.reduce((s,r)=>s+r.primaUSD,0);
+  const totComUSD=byMonth.reduce((s,r)=>s+r.comUSD,0);
+  const totPrimaCol=byMonth.reduce((s,r)=>s+r.primaCol,0);
   const totQty25=Object.values(REF2025_VIAJERO_QTY).reduce((s,v)=>s+v,0);
   const pctQty=totQty25>0?(totQty26/totQty25*100):0;
-  const GREEN='#059669';
+  const fmtUSD=(n)=>Number((n||0).toFixed(2)).toLocaleString('es-CR',{minimumFractionDigits:2,maximumFractionDigits:2});
   const maxQ=Math.max(...byMonth.map(r=>r.qty),1,...Object.values(REF2025_VIAJERO_QTY));
 
   const th={padding:'8px 10px',fontSize:11,fontWeight:600,color:'#64748b',textAlign:'left',borderBottom:'1px solid #f1f5f9',background:'#f8fafc',whiteSpace:'nowrap'};
@@ -575,12 +622,22 @@ function MetaViajeroView({months,rates}){
 
   return(
     <div style={{padding:14,maxWidth:1100}}>
-      {/* Header KPIs */}
+      {/* Note about TC */}
+      <div style={{background:'#fffbeb',border:'1px solid #fde68a',borderRadius:8,padding:'10px 16px',marginBottom:14,fontSize:12,color:'#92400e',display:'flex',alignItems:'center',gap:8}}>
+        💡 Los montos se muestran en <strong>dólares (USD)</strong>, convertidos con el TC de cada mes. Para ajustar el TC, edítelo en la pestaña del mes correspondiente.
+        <div style={{marginLeft:'auto',display:'flex',gap:16}}>
+          {byMonth.filter(r=>r.ventas.length>0).map(r=>(
+            <span key={r.m} style={{fontSize:11}}><strong>{r.m.slice(0,3)}:</strong> ₡{fmtN(r.tc)}</span>
+          ))}
+        </div>
+      </div>
+
+      {/* KPIs in USD */}
       <div style={{display:'grid',gridTemplateColumns:'repeat(4,1fr)',gap:8,marginBottom:14}}>
         {[
           {l:'Pólizas 2026',v:fmtN(totQty26),c:'#0f172a'},
-          {l:'Prima Total 2026',v:`₡${fmtN(totPrima26)}`,c:GREEN},
-          {l:'Ingresos WEB (17%)',v:`₡${fmtN(totCom26)}`,c:BLUE},
+          {l:'Prima Total USD',v:`$${fmtUSD(totPrimaUSD)}`,c:GREEN},
+          {l:'Ingresos WEB USD (17%)',v:`$${fmtUSD(totComUSD)}`,c:BLUE},
           {l:'vs 2025 ('+fmtN(totQty25)+' pól.)',v:`${pctQty.toFixed(1)}%`,c:pctQty>=100?'#15803d':'#d97706'},
         ].map(({l,v,c})=>(
           <div key={l} style={{background:'white',border:'1px solid #f1f5f9',borderRadius:8,padding:'12px 14px'}}>
@@ -601,10 +658,8 @@ function MetaViajeroView({months,rates}){
         </div>
         <div style={{display:'flex',alignItems:'flex-end',gap:4,height:140}}>
           {MESES.map((m,i)=>{
-            const q26=byMonth[i].qty;
-            const q25=REF2025_VIAJERO_QTY[m]||0;
-            const h26=q26>0?Math.max(4,q26/maxQ*110):2;
-            const h25=q25>0?Math.max(4,q25/maxQ*110):2;
+            const q26=byMonth[i].qty,q25=REF2025_VIAJERO_QTY[m]||0;
+            const h26=q26>0?Math.max(4,q26/maxQ*110):2,h25=q25>0?Math.max(4,q25/maxQ*110):2;
             return(
               <div key={m} style={{flex:1,display:'flex',flexDirection:'column',alignItems:'center',gap:2}}>
                 <div style={{width:'100%',display:'flex',gap:2,alignItems:'flex-end',height:114}}>
@@ -618,45 +673,51 @@ function MetaViajeroView({months,rates}){
         </div>
       </div>
 
-      {/* Monthly detail table */}
+      {/* Detail table — USD */}
       <div style={{background:'white',border:'1px solid #f1f5f9',borderRadius:10,overflow:'hidden'}}>
-        <div style={{padding:'12px 16px',borderBottom:'1px solid #f1f5f9',fontWeight:700,fontSize:14,color:'#0f172a'}}>Detalle por mes — Viajero Asistencia 2026</div>
+        <div style={{padding:'12px 16px',borderBottom:'1px solid #f1f5f9',display:'flex',justifyContent:'space-between',alignItems:'center'}}>
+          <span style={{fontWeight:700,fontSize:14,color:'#0f172a'}}>Detalle por mes — Viajero Asistencia 2026</span>
+          <span style={{fontSize:11,color:'#94a3b8'}}>Montos en dólares USD</span>
+        </div>
         <div style={{overflowX:'auto'}}>
           <table style={{width:'100%',borderCollapse:'collapse'}}>
-            <thead><tr>{['Mes','Lote / Descripción','Pólizas 2026','Pólizas 2025','Δ vs 2025','Prima','Ingresos WEB'].map(h=><th key={h} style={th}>{h}</th>)}</tr></thead>
+            <thead><tr>{['Mes','Lote / Descripción','Pólizas','Δ vs 2025','TC ₡/$','Prima USD','Ing. WEB USD','Prima ₡'].map(h=><th key={h} style={th}>{h}</th>)}</tr></thead>
             <tbody>
-              {byMonth.map(({m,ventas,qty,prima,com})=>{
+              {byMonth.map(({m,ventas,qty,primaCol,primaUSD,comCol,comUSD,tc})=>{
                 const q25=REF2025_VIAJERO_QTY[m]||0;
                 const delta=qty-q25;
-                const hasData=ventas.length>0;
-                if(!hasData) return(
+                if(ventas.length===0) return(
                   <tr key={m}>
                     <td style={{...td,fontWeight:600,color:'#94a3b8'}}>{m}</td>
-                    <td style={{...td,color:'#94a3b8',fontSize:12}} colSpan={4}>Sin datos</td>
-                    <td style={td}></td>
-                    <td style={td}></td>
+                    <td style={{...td,color:'#94a3b8',fontSize:12}} colSpan={7}>Sin datos</td>
                   </tr>
                 );
-                return ventas.map((v,vi)=>(
-                  <tr key={v.id} onMouseEnter={e=>e.currentTarget.style.background='#f8fafc'} onMouseLeave={e=>e.currentTarget.style.background='transparent'}>
-                    <td style={{...td,fontWeight:600,color:vi>0?'transparent':'#0f172a'}}>{vi===0?m:''}</td>
-                    <td style={{...td,fontSize:12,maxWidth:260}}><div style={{overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{v.c}</div></td>
-                    <td style={{...td,textAlign:'right',fontFamily:'monospace',fontSize:12,color:GREEN,fontWeight:600}}>{fmtN(parseQty(v.c))}</td>
-                    <td style={{...td,textAlign:'right',fontFamily:'monospace',fontSize:12,color:'#94a3b8'}}>{vi===0?fmtN(q25):'—'}</td>
-                    <td style={{...td,textAlign:'right',fontFamily:'monospace',fontSize:12,color:delta>=0?'#15803d':'#dc2626'}}>{vi===0?(delta>=0?'+':'')+fmtN(delta):'—'}</td>
-                    <td style={{...td,textAlign:'right',fontFamily:'monospace',fontSize:12}}>₡{fmtN(v.p)}</td>
-                    <td style={{...td,textAlign:'right',fontFamily:'monospace',fontSize:12,color:BLUE}}>₡{fmtN(calcCom(v.p,v.l,rates))}</td>
-                  </tr>
-                ));
+                return ventas.map((v,vi)=>{
+                  const vPrimaUSD=tc>0?Number(v.p||0)/tc:0;
+                  const vComUSD=tc>0?calcCom(Number(v.p||0),v.l,rates)/tc:0;
+                  return(
+                    <tr key={v.id} onMouseEnter={e=>e.currentTarget.style.background='#f8fafc'} onMouseLeave={e=>e.currentTarget.style.background='transparent'}>
+                      <td style={{...td,fontWeight:600,color:vi>0?'transparent':'#0f172a'}}>{vi===0?m:''}</td>
+                      <td style={{...td,fontSize:12,maxWidth:260}}><div style={{overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{v.c}</div></td>
+                      <td style={{...td,textAlign:'right',fontFamily:'monospace',fontSize:12,color:GREEN,fontWeight:600}}>{fmtN(parseQty(v.c))}</td>
+                      <td style={{...td,textAlign:'right',fontFamily:'monospace',fontSize:12,color:delta>=0?'#15803d':'#dc2626'}}>{vi===0?(delta>=0?'+':'')+fmtN(delta):'—'}</td>
+                      <td style={{...td,textAlign:'right',fontFamily:'monospace',fontSize:12,color:'#92400e'}}>{vi===0?fmtN(tc):'—'}</td>
+                      <td style={{...td,textAlign:'right',fontFamily:'monospace',fontSize:12,color:GREEN,fontWeight:600}}>${fmtUSD(vPrimaUSD)}</td>
+                      <td style={{...td,textAlign:'right',fontFamily:'monospace',fontSize:12,color:BLUE}}>${fmtUSD(vComUSD)}</td>
+                      <td style={{...td,textAlign:'right',fontFamily:'monospace',fontSize:11,color:'#94a3b8'}}>₡{fmtN(v.p)}</td>
+                    </tr>
+                  );
+                });
               })}
             </tbody>
             <tfoot><tr>
               <td colSpan={2} style={{...tot,color:'#64748b'}}>TOTAL 2026</td>
               <td style={{...tot,textAlign:'right',fontFamily:'monospace',color:GREEN}}>{fmtN(totQty26)}</td>
-              <td style={{...tot,textAlign:'right',fontFamily:'monospace',color:'#94a3b8'}}>{fmtN(totQty25)}</td>
               <td style={{...tot,textAlign:'right',fontFamily:'monospace',color:totQty26>=totQty25?'#15803d':'#dc2626'}}>{totQty26>=totQty25?'+':''}{fmtN(totQty26-totQty25)}</td>
-              <td style={{...tot,textAlign:'right',fontFamily:'monospace'}}>₡{fmtN(totPrima26)}</td>
-              <td style={{...tot,textAlign:'right',fontFamily:'monospace',color:BLUE}}>₡{fmtN(totCom26)}</td>
+              <td style={tot}></td>
+              <td style={{...tot,textAlign:'right',fontFamily:'monospace',color:GREEN,fontSize:14}}>${fmtUSD(totPrimaUSD)}</td>
+              <td style={{...tot,textAlign:'right',fontFamily:'monospace',color:BLUE,fontSize:14}}>${fmtUSD(totComUSD)}</td>
+              <td style={{...tot,textAlign:'right',fontFamily:'monospace',color:'#94a3b8'}}>₡{fmtN(totPrimaCol)}</td>
             </tr></tfoot>
           </table>
         </div>
