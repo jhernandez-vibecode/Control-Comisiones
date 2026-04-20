@@ -1,0 +1,650 @@
+import { useState, useEffect, useCallback } from "react";
+
+const MESES = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
+const LINEAS = ['AUTOMOVILES','RT CONSTRUCCIÓN','Viajero Asistencia','Estudiantil Individual','EQUIPO CONTRATISTA','INS MEDICAL','HOGAR COMPRENSIVO','OTROS'];
+const VENDEDORES = ['WEB','CARTERA','ALTAMURA','OTRO'];
+const FORMAS = ['ANUAL','SEMESTRAL','TRIMESTRAL','PC'];
+const COM = {AUTOMOVILES:0.15,'RT CONSTRUCCIÓN':0.10,'Viajero Asistencia':0.17,'Estudiantil Individual':0.185,'EQUIPO CONTRATISTA':0.16,'INS MEDICAL':0.16,'HOGAR COMPRENSIVO':0.21,OTROS:0.15};
+const META = 1_250_000_000;
+const BLUE = '#0369a1';
+const nextId = () => Date.now().toString(36)+Math.random().toString(36).slice(2,5);
+const fmtN = (n) => Math.round(n||0).toLocaleString('es-CR');
+const calcCom = (prima, linea) => Number(prima||0) * (COM[linea]||0.15);
+
+const INIT = (() => {
+  const d = {};
+  MESES.forEach(m => d[m]={ventas:[],inv:[]});
+  d.Enero.ventas=[
+    {id:'e1a',c:'3-101-746921 S.A',l:'AUTOMOVILES',f:'SEMESTRAL',p:279977,v:'CARTERA'},
+    {id:'e1b',c:'SOLANO BOLAÑOS HAZEL MARIA',l:'AUTOMOVILES',f:'TRIMESTRAL',p:149113,v:'WEB'},
+    {id:'e1c',c:'GARCIA GUTIERREZ ROY EDUARDO',l:'AUTOMOVILES',f:'TRIMESTRAL',p:142331,v:'WEB'},
+    {id:'e1d',c:'PACHECO FONSECA SEBASTIAN',l:'AUTOMOVILES',f:'TRIMESTRAL',p:141663,v:'WEB'},
+    {id:'e1e',c:'BRENES BOLAÑOS DIANA MARIA',l:'AUTOMOVILES',f:'TRIMESTRAL',p:131873,v:'WEB'},
+    {id:'e1f',c:'BARBOZA SANDOVAL NOELY',l:'AUTOMOVILES',f:'ANUAL',p:405608,v:'CARTERA'},
+    {id:'e1g',c:'LORIA VILLALOBOS DANIEL',l:'AUTOMOVILES',f:'ANUAL',p:409929,v:'WEB'},
+    {id:'e1h',c:'COMPRAS DIRECTAS WEB IQ ENERO (1846)',l:'Viajero Asistencia',f:'PC',p:58831428,v:'WEB'},
+    {id:'e1i',c:'COMPRAS DIRECTAS ESTUDIANTIL IQ ENERO (824)',l:'Estudiantil Individual',f:'ANUAL',p:9460962,v:'WEB'},
+    {id:'e1j',c:'LEANDRO ASTORGA CARMEN LETICIA',l:'AUTOMOVILES',f:'ANUAL',p:233735,v:'WEB'},
+    {id:'e1k',c:'EMPRESAS BERTHIER EBI DE COSTA RICA S.A',l:'EQUIPO CONTRATISTA',f:'ANUAL',p:609722,v:'CARTERA'},
+    {id:'e1l',c:'SALAS SANCHEZ LINDA',l:'AUTOMOVILES',f:'SEMESTRAL',p:231023,v:'WEB'},
+    {id:'e1m',c:'GAMBOA AMUY MONSERRAT',l:'AUTOMOVILES',f:'TRIMESTRAL',p:123841,v:'WEB'},
+    {id:'e1n',c:'CAMPOS BARRANTES WILLIAM ALBERTO',l:'RT CONSTRUCCIÓN',f:'PC',p:1216925,v:'WEB'},
+    {id:'e1o',c:'MORA VALVERDE MARIA MARJORIE',l:'AUTOMOVILES',f:'ANUAL',p:415858,v:'WEB'},
+    {id:'e1p',c:'COMPRAS DIRECTAS WEB IIQ ENERO (1700)',l:'Viajero Asistencia',f:'PC',p:50095500,v:'WEB'},
+    {id:'e1q',c:'COMPRAS DIRECTAS ESTUDIANTIL IIQ ENERO (1266)',l:'Estudiantil Individual',f:'ANUAL',p:14044356,v:'WEB'},
+  ];
+  d.Enero.inv=[
+    {id:'i1a',fecha:'2026-01-01',col:151500,usd:300},{id:'i1b',fecha:'2026-01-02',col:277750,usd:550},
+    {id:'i1c',fecha:'2026-01-03',col:151500,usd:300},{id:'i1d',fecha:'2026-01-04',col:151500,usd:300},
+    {id:'i1e',fecha:'2026-01-06',col:252500,usd:500},{id:'i1f',fecha:'2026-01-07',col:303000,usd:600},
+    {id:'i1g',fecha:'2026-01-09',col:252500,usd:500},{id:'i1h',fecha:'2026-01-10',col:252500,usd:500},
+    {id:'i1i',fecha:'2026-01-11',col:202000,usd:400},{id:'i1j',fecha:'2026-01-12',col:151500,usd:300},
+    {id:'i1k',fecha:'2026-01-13',col:303000,usd:600},{id:'i1l',fecha:'2026-01-14',col:303000,usd:600},
+    {id:'i1m',fecha:'2026-01-15',col:252000,usd:500},{id:'i1n',fecha:'2026-01-16',col:252000,usd:500},
+    {id:'i1o',fecha:'2026-01-17',col:252500,usd:500},{id:'i1p',fecha:'2026-01-18',col:252500,usd:500},
+    {id:'i1q',fecha:'2026-01-19',col:252500,usd:500},{id:'i1r',fecha:'2026-01-20',col:252500,usd:500},
+    {id:'i1s',fecha:'2026-01-21',col:252500,usd:500},{id:'i1t',fecha:'2026-01-22',col:252500,usd:500},
+    {id:'i1u',fecha:'2026-01-23',col:101000,usd:200},{id:'i1v',fecha:'2026-01-24',col:101000,usd:200},
+    {id:'i1w',fecha:'2026-01-25',col:252500,usd:500},{id:'i1x',fecha:'2026-01-26',col:252500,usd:500},
+    {id:'i1y',fecha:'2026-01-27',col:202000,usd:400},{id:'i1z',fecha:'2026-01-28',col:252500,usd:500},
+    {id:'i1aa',fecha:'2026-01-29',col:202000,usd:400},{id:'i1ab',fecha:'2026-01-30',col:151500,usd:300},
+  ];
+  d.Febrero.ventas=[
+    {id:'e2a',c:'FLORES NUÑEZ NOEMY ANDREA',l:'AUTOMOVILES',f:'ANUAL',p:409233,v:'WEB'},
+    {id:'e2b',c:'HERRERA ZUÑIGA VICTOR',l:'AUTOMOVILES',f:'SEMESTRAL',p:191924,v:'CARTERA'},
+    {id:'e2c',c:'BOLAÑOS MOLINA HANYELINNE',l:'AUTOMOVILES',f:'SEMESTRAL',p:282217,v:'WEB'},
+    {id:'e2d',c:'EMPRESAS BERTHIER EBI DE COSTA RICA S.A',l:'EQUIPO CONTRATISTA',f:'ANUAL',p:199075,v:'CARTERA'},
+    {id:'e2e',c:'MORALES FLORES PAULA',l:'AUTOMOVILES',f:'TRIMESTRAL',p:98628,v:'WEB'},
+    {id:'e2f',c:'ARCE RAMIREZ JOSE ANTONIO',l:'AUTOMOVILES',f:'TRIMESTRAL',p:130294,v:'WEB'},
+    {id:'e2g',c:'CALVO ROJAS PABLO ADOLFO',l:'AUTOMOVILES',f:'ANUAL',p:563331,v:'WEB'},
+    {id:'e2h',c:'PEREIRA VALERIN LEONARDO ESTEBAN',l:'AUTOMOVILES',f:'ANUAL',p:296305,v:'CARTERA'},
+    {id:'e2i',c:'BAISOTTI MARIANA',l:'AUTOMOVILES',f:'TRIMESTRAL',p:118720,v:'WEB'},
+    {id:'e2j',c:'COMPRAS DIRECTAS WEB IQ FEBRERO (1287)',l:'Viajero Asistencia',f:'PC',p:38533500,v:'WEB'},
+    {id:'e2k',c:'COMPRAS DIRECTAS ESTUDIANTIL IQ FEBRERO (2337)',l:'Estudiantil Individual',f:'ANUAL',p:25416015,v:'WEB'},
+    {id:'e2l',c:'3-102-942244 SRL',l:'AUTOMOVILES',f:'ANUAL',p:1474574,v:'CARTERA'},
+    {id:'e2m',c:'ROJAS FERNANDEZ JOSE DAVID',l:'AUTOMOVILES',f:'ANUAL',p:136678,v:'CARTERA'},
+    {id:'e2n',c:'ROJAS GUTIERREZ ANDREA DE JESUS',l:'INS MEDICAL',f:'ANUAL',p:1457141,v:'CARTERA'},
+    {id:'e2o',c:'PEREZ UGALDE DUNNIA MARIA',l:'AUTOMOVILES',f:'ANUAL',p:325127,v:'WEB'},
+    {id:'e2p',c:'AVILA SANCHO MAURICIO',l:'AUTOMOVILES',f:'SEMESTRAL',p:282603,v:'WEB'},
+    {id:'e2q',c:'PRENDAS TORRES CALEB',l:'AUTOMOVILES',f:'TRIMESTRAL',p:103826,v:'WEB'},
+    {id:'e2r',c:'ASTORGA GOMEZ PABLO',l:'AUTOMOVILES',f:'TRIMESTRAL',p:107412,v:'WEB'},
+    {id:'e2s',c:'RODRIGUEZ VARGAS MARIA FERNANDA',l:'AUTOMOVILES',f:'ANUAL',p:385157,v:'WEB'},
+    {id:'e2t',c:'ROJAS RODRIGUEZ EMILLY MARIA',l:'AUTOMOVILES',f:'ANUAL',p:340270,v:'WEB'},
+    {id:'e2u',c:'COMPRAS DIRECTAS WEB II FEBRERO (959)',l:'Viajero Asistencia',f:'PC',p:28658165,v:'WEB'},
+    {id:'e2v',c:'COMPRAS DIRECTAS ESTUDIANTIL IIQ FEBRERO (2413)',l:'Estudiantil Individual',f:'ANUAL',p:24884817,v:'WEB'},
+  ];
+  d.Febrero.inv=[
+    {id:'i2a',fecha:'2026-02-01',col:101000,usd:200},{id:'i2b',fecha:'2026-02-03',col:303000,usd:600},
+    {id:'i2c',fecha:'2026-02-04',col:303000,usd:600},{id:'i2d',fecha:'2026-02-05',col:202000,usd:400},
+    {id:'i2e',fecha:'2026-02-06',col:202000,usd:400},{id:'i2f',fecha:'2026-02-07',col:202000,usd:400},
+    {id:'i2g',fecha:'2026-02-08',col:101000,usd:200},{id:'i2h',fecha:'2026-02-09',col:303000,usd:600},
+    {id:'i2i',fecha:'2026-02-10',col:252500,usd:500},{id:'i2j',fecha:'2026-02-11',col:252500,usd:500},
+    {id:'i2k',fecha:'2026-02-12',col:252500,usd:500},{id:'i2l',fecha:'2026-02-13',col:202000,usd:400},
+    {id:'i2m',fecha:'2026-02-14',col:151500,usd:300},{id:'i2n',fecha:'2026-02-15',col:151500,usd:300},
+    {id:'i2o',fecha:'2026-02-16',col:252500,usd:500},{id:'i2p',fecha:'2026-02-17',col:252500,usd:500},
+    {id:'i2q',fecha:'2026-02-18',col:303000,usd:600},{id:'i2r',fecha:'2026-02-19',col:303000,usd:600},
+    {id:'i2s',fecha:'2026-02-20',col:202000,usd:400},{id:'i2t',fecha:'2026-02-21',col:151500,usd:300},
+    {id:'i2u',fecha:'2026-02-22',col:151500,usd:300},{id:'i2v',fecha:'2026-02-23',col:303000,usd:600},
+    {id:'i2w',fecha:'2026-02-24',col:252500,usd:500},{id:'i2x',fecha:'2026-02-25',col:202000,usd:400},
+    {id:'i2y',fecha:'2026-02-26',col:252500,usd:500},{id:'i2z',fecha:'2026-02-27',col:151500,usd:300},
+    {id:'i2aa',fecha:'2026-02-28',col:151500,usd:300},
+  ];
+  d.Marzo.ventas=[
+    {id:'e3a',c:'EMPRESAS BERTHIER EBI DE COSTA RICA',l:'EQUIPO CONTRATISTA',f:'ANUAL',p:1023730,v:'CARTERA'},
+    {id:'e3b',c:'SOTO GUERRERO ANIE MELISSA',l:'AUTOMOVILES',f:'TRIMESTRAL',p:110319,v:'WEB'},
+    {id:'e3c',c:'CRAWFORD MARRIANNE',l:'RT CONSTRUCCIÓN',f:'PC',p:213023,v:'WEB'},
+    {id:'e3d',c:'ZUÑIGA CHAVES GEORGINA',l:'RT CONSTRUCCIÓN',f:'PC',p:305484,v:'WEB'},
+    {id:'e3e',c:'JIMENEZ CHACÓN JESSICA',l:'RT CONSTRUCCIÓN',f:'PC',p:950583,v:'WEB'},
+    {id:'e3f',c:'LA TIGRA CONTEST STATION SRL',l:'AUTOMOVILES',f:'SEMESTRAL',p:338854,v:'WEB'},
+    {id:'e3g',c:'BARQUERO ROMAN VERÓNICA',l:'RT CONSTRUCCIÓN',f:'PC',p:1191518,v:'WEB'},
+    {id:'e3h',c:'LAS AGUILAS CINCO FPC LIMITADA',l:'RT CONSTRUCCIÓN',f:'PC',p:689535,v:'WEB'},
+    {id:'e3i',c:'PORRAS JIMENEZ JESUS',l:'AUTOMOVILES',f:'ANUAL',p:349540,v:'WEB'},
+    {id:'e3j',c:'MORALES PASOS OCTAVIO',l:'AUTOMOVILES',f:'TRIMESTRAL',p:153257,v:'WEB'},
+    {id:'e3k',c:'TRUQUE FERNANDEZ MÓNICA',l:'AUTOMOVILES',f:'ANUAL',p:356715,v:'WEB'},
+    {id:'e3l',c:'COMPRAS DIRECTAS WEB IQ MARZO (976)',l:'Viajero Asistencia',f:'PC',p:29242425,v:'WEB'},
+    {id:'e3m',c:'COMPRAS DIRECTAS ESTUDIANTIL IQ MARZO (1714)',l:'Estudiantil Individual',f:'ANUAL',p:15753566,v:'WEB'},
+    {id:'e3n',c:'QUESADA SOLANO LOANA',l:'AUTOMOVILES',f:'SEMESTRAL',p:214675,v:'WEB'},
+    {id:'e3o',c:'GODINEZ SOLIS ALEJANDRA CRISTINA',l:'RT CONSTRUCCIÓN',f:'PC',p:146603,v:'WEB'},
+    {id:'e3p',c:'SOLIS ROJAS HERNAN ANDREY',l:'AUTOMOVILES',f:'TRIMESTRAL',p:131873,v:'WEB'},
+    {id:'e3q',c:'CHACON VASQUEZ JOSUE',l:'AUTOMOVILES',f:'TRIMESTRAL',p:80543,v:'WEB'},
+    {id:'e3r',c:'CASCANTE ARAYA MARCO VINICIO',l:'AUTOMOVILES',f:'TRIMESTRAL',p:199482,v:'WEB'},
+    {id:'e3s',c:'PEREZ HODGSON JOHNNY',l:'AUTOMOVILES',f:'SEMESTRAL',p:216456,v:'WEB'},
+    {id:'e3t',c:'COMPRAS DIRECTAS WEB IIQ MARZO (1286)',l:'Viajero Asistencia',f:'PC',p:49646650,v:'WEB'},
+    {id:'e3u',c:'COMPRAS DIRECTAS ESTUDIANTIL IQ MARZO (1328)',l:'Estudiantil Individual',f:'ANUAL',p:13107130,v:'WEB'},
+  ];
+  d.Marzo.inv=[
+    {id:'i3a',fecha:'2026-03-01',col:101000,usd:200},{id:'i3b',fecha:'2026-03-02',col:303000,usd:600},
+    {id:'i3c',fecha:'2026-03-03',col:202000,usd:400},{id:'i3d',fecha:'2026-03-04',col:202000,usd:400},
+    {id:'i3e',fecha:'2026-03-05',col:202000,usd:400},{id:'i3f',fecha:'2026-03-06',col:202000,usd:400},
+    {id:'i3g',fecha:'2026-03-07',col:202000,usd:400},{id:'i3h',fecha:'2026-03-08',col:101000,usd:200},
+    {id:'i3i',fecha:'2026-03-09',col:101000,usd:200},{id:'i3j',fecha:'2026-03-10',col:252500,usd:500},
+    {id:'i3k',fecha:'2026-03-11',col:303000,usd:600},{id:'i3l',fecha:'2026-03-12',col:202000,usd:400},
+    {id:'i3m',fecha:'2026-03-13',col:252500,usd:500},{id:'i3n',fecha:'2026-03-14',col:252500,usd:500},
+    {id:'i3o',fecha:'2026-03-15',col:151500,usd:300},{id:'i3p',fecha:'2026-03-16',col:151500,usd:300},
+    {id:'i3q',fecha:'2026-03-17',col:303000,usd:600},{id:'i3r',fecha:'2026-03-18',col:252500,usd:500},
+    {id:'i3s',fecha:'2026-03-19',col:252500,usd:500},{id:'i3t',fecha:'2026-03-20',col:353500,usd:700},
+    {id:'i3u',fecha:'2026-03-21',col:252500,usd:500},{id:'i3v',fecha:'2026-03-22',col:252500,usd:500},
+    {id:'i3w',fecha:'2026-03-23',col:252500,usd:500},{id:'i3x',fecha:'2026-03-24',col:101000,usd:200},
+    {id:'i3y',fecha:'2026-03-25',col:151500,usd:300},{id:'i3z',fecha:'2026-03-26',col:101000,usd:200},
+    {id:'i3aa',fecha:'2026-03-27',col:151500,usd:300},{id:'i3ab',fecha:'2026-03-28',col:151500,usd:300},
+  ];
+  d.Abril.ventas=[
+    {id:'e4a',c:'MADRIGAL JIMENEZ DANIELA',l:'AUTOMOVILES',f:'ANUAL',p:326951,v:'WEB'},
+    {id:'e4b',c:'ESFERA DE PLOMO IMPERIAL EPI S.A',l:'AUTOMOVILES',f:'SEMESTRAL',p:338972,v:'ALTAMURA'},
+    {id:'e4c',c:'ALFARO CHAVES CRISTOPHER',l:'AUTOMOVILES',f:'SEMESTRAL',p:167030,v:'WEB'},
+    {id:'e4d',c:'3-101-599931 S.A',l:'RT CONSTRUCCIÓN',f:'PC',p:1082361,v:'WEB'},
+    {id:'e4e',c:'PALMA PEREZ SONIA',l:'RT CONSTRUCCIÓN',f:'PC',p:483365,v:'WEB'},
+    {id:'e4f',c:'ASTORGA GOMEZ PABLO CESAR',l:'AUTOMOVILES',f:'TRIMESTRAL',p:183754,v:'WEB'},
+    {id:'e4g',c:'COMPRAS DIRECTAS WEB IQ ABRIL (776)',l:'Viajero Asistencia',f:'PC',p:26234930,v:'WEB'},
+    {id:'e4h',c:'COMPRAS DIRECTAS ESTUDIANTIL IQ ABRIL (1139)',l:'Estudiantil Individual',f:'ANUAL',p:10806500,v:'WEB'},
+  ];
+  d.Abril.inv=[
+    {id:'i4a',fecha:'2026-04-01',col:151500,usd:300},{id:'i4b',fecha:'2026-04-02',col:202000,usd:400},
+    {id:'i4c',fecha:'2026-04-03',col:101000,usd:200},{id:'i4d',fecha:'2026-04-04',col:101000,usd:200},
+    {id:'i4e',fecha:'2026-04-05',col:101000,usd:200},{id:'i4f',fecha:'2026-04-07',col:437500,usd:850},
+    {id:'i4g',fecha:'2026-04-08',col:202000,usd:400},{id:'i4h',fecha:'2026-04-09',col:303000,usd:600},
+    {id:'i4i',fecha:'2026-04-10',col:252500,usd:500},{id:'i4j',fecha:'2026-04-11',col:202000,usd:400},
+    {id:'i4k',fecha:'2026-04-12',col:101000,usd:200},{id:'i4l',fecha:'2026-04-13',col:101000,usd:200},
+    {id:'i4m',fecha:'2026-04-14',col:252500,usd:500},{id:'i4n',fecha:'2026-04-15',col:202000,usd:400},
+    {id:'i4o',fecha:'2026-04-16',col:252500,usd:500},{id:'i4p',fecha:'2026-04-17',col:252500,usd:500},
+  ];
+  return d;
+})();
+
+const LINEA_COLORS = {
+  'AUTOMOVILES':'#0369a1','RT CONSTRUCCIÓN':'#7c3aed','Viajero Asistencia':'#059669',
+  'Estudiantil Individual':'#d97706','EQUIPO CONTRATISTA':'#dc2626','INS MEDICAL':'#db2777',
+  'HOGAR COMPRENSIVO':'#0891b2','OTROS':'#6b7280'
+};
+
+const Badge = ({text}) => (
+  <span style={{
+    fontSize:11,padding:'2px 7px',borderRadius:10,fontWeight:500,
+    background:`${LINEA_COLORS[text]||'#6b7280'}18`,
+    color:LINEA_COLORS[text]||'#6b7280'
+  }}>{text}</span>
+);
+
+const VBadge = ({v}) => (
+  <span style={{
+    fontSize:11,padding:'2px 7px',borderRadius:10,fontWeight:500,
+    background: v==='WEB'?'#e0f2fe': v==='CARTERA'?'#f0fdf4':'#fef3c7',
+    color: v==='WEB'?'#0369a1': v==='CARTERA'?'#15803d':'#92400e'
+  }}>{v}</span>
+);
+
+function Modal({title, onClose, children}) {
+  return (
+    <div style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.4)',zIndex:999,display:'flex',alignItems:'center',justifyContent:'center',padding:16}} onClick={onClose}>
+      <div style={{background:'var(--color-background-primary)',borderRadius:12,padding:24,width:'100%',maxWidth:520,maxHeight:'90vh',overflowY:'auto'}} onClick={e=>e.stopPropagation()}>
+        <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:20}}>
+          <span style={{fontSize:16,fontWeight:500,color:'var(--color-text-primary)'}}>{title}</span>
+          <button onClick={onClose} style={{background:'none',border:'none',cursor:'pointer',fontSize:20,color:'var(--color-text-secondary)',lineHeight:1}}>×</button>
+        </div>
+        {children}
+      </div>
+    </div>
+  );
+}
+
+function Field({label, children}) {
+  return (
+    <div style={{marginBottom:14}}>
+      <label style={{fontSize:12,color:'var(--color-text-secondary)',display:'block',marginBottom:4}}>{label}</label>
+      {children}
+    </div>
+  );
+}
+
+function VentaModal({venta, onSave, onDelete, onClose}) {
+  const [form, setForm] = useState(venta || {c:'',l:'AUTOMOVILES',f:'ANUAL',p:'',v:'WEB'});
+  const set = (k,val) => setForm(prev=>({...prev,[k]:val}));
+  const comision = calcCom(Number(form.p||0), form.l);
+  const inStyle = {width:'100%',padding:'8px 10px',borderRadius:6,border:'0.5px solid var(--color-border-secondary)',background:'var(--color-background-primary)',color:'var(--color-text-primary)',fontSize:14,boxSizing:'border-box'};
+  return (
+    <Modal title={venta ? 'Editar venta' : 'Nueva venta'} onClose={onClose}>
+      <Field label="Cliente">
+        <input style={inStyle} value={form.c} onChange={e=>set('c',e.target.value)} placeholder="Nombre del asegurado" />
+      </Field>
+      <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:12}}>
+        <Field label="Línea">
+          <select style={inStyle} value={form.l} onChange={e=>set('l',e.target.value)}>
+            {LINEAS.map(l=><option key={l}>{l}</option>)}
+          </select>
+        </Field>
+        <Field label="Forma de pago">
+          <select style={inStyle} value={form.f} onChange={e=>set('f',e.target.value)}>
+            {FORMAS.map(f=><option key={f}>{f}</option>)}
+          </select>
+        </Field>
+        <Field label="Prima (₡)">
+          <input style={inStyle} type="number" value={form.p} onChange={e=>set('p',e.target.value)} placeholder="0" />
+        </Field>
+        <Field label="Referencia">
+          <select style={inStyle} value={form.v} onChange={e=>set('v',e.target.value)}>
+            {VENDEDORES.map(v=><option key={v}>{v}</option>)}
+          </select>
+        </Field>
+      </div>
+      <div style={{background:'var(--color-background-secondary)',borderRadius:8,padding:'12px 14px',marginBottom:20}}>
+        <span style={{fontSize:12,color:'var(--color-text-secondary)'}}>Ingresos WEB ({(COM[form.l]||0.15)*100}%): </span>
+        <span style={{fontSize:15,fontWeight:500,color:BLUE}}>₡{fmtN(comision)}</span>
+      </div>
+      <div style={{display:'flex',gap:10,justifyContent:'space-between'}}>
+        {venta && <button onClick={()=>onDelete(venta.id)} style={{padding:'8px 16px',borderRadius:6,border:'0.5px solid #fca5a5',background:'#fef2f2',color:'#dc2626',cursor:'pointer',fontSize:14}}>Eliminar</button>}
+        <div style={{display:'flex',gap:10,marginLeft:'auto'}}>
+          <button onClick={onClose} style={{padding:'8px 16px',borderRadius:6,border:'0.5px solid var(--color-border-secondary)',background:'none',cursor:'pointer',fontSize:14,color:'var(--color-text-secondary)'}}>Cancelar</button>
+          <button onClick={()=>onSave({...form,id:venta?.id||nextId(),p:Number(form.p||0)})} style={{padding:'8px 20px',borderRadius:6,border:'none',background:BLUE,color:'white',cursor:'pointer',fontSize:14,fontWeight:500}}>Guardar</button>
+        </div>
+      </div>
+    </Modal>
+  );
+}
+
+function InvModal({row, onSave, onDelete, onClose}) {
+  const [form, setForm] = useState(row || {fecha:'',col:'',usd:''});
+  const set = (k,v) => setForm(prev=>({...prev,[k]:v}));
+  const inStyle = {width:'100%',padding:'8px 10px',borderRadius:6,border:'0.5px solid var(--color-border-secondary)',background:'var(--color-background-primary)',color:'var(--color-text-primary)',fontSize:14,boxSizing:'border-box'};
+  return (
+    <Modal title={row ? 'Editar inversión WEB' : 'Nueva inversión WEB'} onClose={onClose}>
+      <Field label="Fecha">
+        <input style={inStyle} type="date" value={form.fecha} onChange={e=>set('fecha',e.target.value)} />
+      </Field>
+      <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:12}}>
+        <Field label="Colones (₡)">
+          <input style={inStyle} type="number" value={form.col} onChange={e=>set('col',e.target.value)} placeholder="0" />
+        </Field>
+        <Field label="Dólares ($)">
+          <input style={inStyle} type="number" value={form.usd} onChange={e=>set('usd',e.target.value)} placeholder="0" />
+        </Field>
+      </div>
+      <div style={{display:'flex',gap:10,justifyContent:'space-between',marginTop:8}}>
+        {row && <button onClick={()=>onDelete(row.id)} style={{padding:'8px 16px',borderRadius:6,border:'0.5px solid #fca5a5',background:'#fef2f2',color:'#dc2626',cursor:'pointer',fontSize:14}}>Eliminar</button>}
+        <div style={{display:'flex',gap:10,marginLeft:'auto'}}>
+          <button onClick={onClose} style={{padding:'8px 16px',borderRadius:6,border:'0.5px solid var(--color-border-secondary)',background:'none',cursor:'pointer',fontSize:14,color:'var(--color-text-secondary)'}}>Cancelar</button>
+          <button onClick={()=>onSave({...form,id:row?.id||nextId(),col:Number(form.col||0),usd:Number(form.usd||0)})} style={{padding:'8px 20px',borderRadius:6,border:'none',background:BLUE,color:'white',cursor:'pointer',fontSize:14,fontWeight:500}}>Guardar</button>
+        </div>
+      </div>
+    </Modal>
+  );
+}
+
+function MonthView({mes, data, updateMonths}) {
+  const [ventaModal, setVentaModal] = useState(null);
+  const [invModal, setInvModal] = useState(null);
+
+  const ventas = data.ventas || [];
+  const inv = data.inv || [];
+  const totalP = ventas.reduce((s,v)=>s+Number(v.p||0),0);
+  const totalCom = ventas.reduce((s,v)=>s+calcCom(Number(v.p||0),v.l),0);
+  const totalCol = inv.reduce((s,r)=>s+Number(r.col||0),0);
+  const totalUSD = inv.reduce((s,r)=>s+Number(r.usd||0),0);
+  const roi = totalCol > 0 ? ((totalCom - totalCol)/totalCol*100) : 0;
+
+  const saveVenta = (venta) => {
+    updateMonths(prev => {
+      const list = prev[mes].ventas;
+      const idx = list.findIndex(x=>x.id===venta.id);
+      const next = idx>=0 ? list.map(x=>x.id===venta.id?venta:x) : [...list,venta];
+      return {...prev,[mes]:{...prev[mes],ventas:next}};
+    });
+    setVentaModal(null);
+  };
+  const deleteVenta = (id) => {
+    updateMonths(prev=>({...prev,[mes]:{...prev[mes],ventas:prev[mes].ventas.filter(x=>x.id!==id)}}));
+    setVentaModal(null);
+  };
+  const saveInv = (row) => {
+    updateMonths(prev => {
+      const list = prev[mes].inv;
+      const idx = list.findIndex(x=>x.id===row.id);
+      const next = idx>=0 ? list.map(x=>x.id===row.id?row:x) : [...list,row].sort((a,b)=>a.fecha.localeCompare(b.fecha));
+      return {...prev,[mes]:{...prev[mes],inv:next}};
+    });
+    setInvModal(null);
+  };
+  const deleteInv = (id) => {
+    updateMonths(prev=>({...prev,[mes]:{...prev[mes],inv:prev[mes].inv.filter(x=>x.id!==id)}}));
+    setInvModal(null);
+  };
+
+  const thStyle = {padding:'8px 10px',fontSize:11,fontWeight:500,color:'var(--color-text-secondary)',textAlign:'left',borderBottom:'0.5px solid var(--color-border-tertiary)',whiteSpace:'nowrap',background:'var(--color-background-secondary)'};
+  const tdStyle = {padding:'9px 10px',fontSize:13,borderBottom:'0.5px solid var(--color-border-tertiary)',verticalAlign:'middle'};
+  const totStyle = {padding:'9px 10px',fontSize:13,fontWeight:500,borderTop:'1px solid var(--color-border-secondary)',background:'var(--color-background-secondary)'};
+
+  return (
+    <div style={{padding:16,maxWidth:1400,margin:'0 auto'}}>
+      {/* KPI Cards */}
+      <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(160px,1fr))',gap:10,marginBottom:16}}>
+        {[
+          {label:'Prima Total',val:`₡${fmtN(totalP)}`,color:'var(--color-text-primary)'},
+          {label:'Ingresos WEB',val:`₡${fmtN(totalCom)}`,color:BLUE},
+          {label:'Inversión ADS',val:`₡${fmtN(totalCol)}`,color:'#dc2626'},
+          {label:'ROI',val:`${roi>=0?'+':''}${roi.toFixed(1)}%`,color:roi>=0?'#15803d':'#dc2626'},
+          {label:'Inversión USD',val:`$${fmtN(totalUSD)}`,color:'#7c3aed'},
+        ].map(({label,val,color})=>(
+          <div key={label} style={{background:'var(--color-background-primary)',border:'0.5px solid var(--color-border-tertiary)',borderRadius:10,padding:'12px 14px'}}>
+            <div style={{fontSize:11,color:'var(--color-text-secondary)',marginBottom:4}}>{label}</div>
+            <div style={{fontSize:18,fontWeight:500,color}}>{val}</div>
+          </div>
+        ))}
+      </div>
+
+      <div style={{display:'grid',gridTemplateColumns:'1fr 340px',gap:16,alignItems:'start'}}>
+        {/* Ventas Table */}
+        <div style={{background:'var(--color-background-primary)',border:'0.5px solid var(--color-border-tertiary)',borderRadius:10,overflow:'hidden'}}>
+          <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',padding:'12px 14px',borderBottom:'0.5px solid var(--color-border-tertiary)'}}>
+            <div>
+              <span style={{fontWeight:500,fontSize:14,color:'var(--color-text-primary)'}}>Control de Clientes</span>
+              <span style={{fontSize:12,color:'var(--color-text-secondary)',marginLeft:8}}>{ventas.length} registros</span>
+            </div>
+            <button onClick={()=>setVentaModal('new')} style={{padding:'6px 14px',borderRadius:6,border:`1px solid ${BLUE}`,background:BLUE,color:'white',cursor:'pointer',fontSize:13,fontWeight:500}}>+ Agregar</button>
+          </div>
+          <div style={{overflowX:'auto'}}>
+            <table style={{width:'100%',borderCollapse:'collapse',minWidth:640}}>
+              <thead>
+                <tr>
+                  {['#','Cliente','Línea','Forma Pago','Prima','Ref.','Ingresos WEB'].map(h=>(
+                    <th key={h} style={thStyle}>{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {ventas.map((v,i)=>(
+                  <tr key={v.id} onClick={()=>setVentaModal(v)} style={{cursor:'pointer',transition:'background 0.1s'}}
+                    onMouseEnter={e=>e.currentTarget.style.background='var(--color-background-secondary)'}
+                    onMouseLeave={e=>e.currentTarget.style.background='transparent'}>
+                    <td style={{...tdStyle,color:'var(--color-text-secondary)',width:32}}>{i+1}</td>
+                    <td style={{...tdStyle,maxWidth:200}}><div style={{overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap',maxWidth:200}}>{v.c}</div></td>
+                    <td style={tdStyle}><Badge text={v.l}/></td>
+                    <td style={{...tdStyle,color:'var(--color-text-secondary)'}}>{v.f}</td>
+                    <td style={{...tdStyle,textAlign:'right',fontFamily:'var(--font-mono)',fontSize:12}}>₡{fmtN(v.p)}</td>
+                    <td style={tdStyle}><VBadge v={v.v}/></td>
+                    <td style={{...tdStyle,textAlign:'right',fontFamily:'var(--font-mono)',fontSize:12,color:BLUE}}>₡{fmtN(calcCom(v.p,v.l))}</td>
+                  </tr>
+                ))}
+                {ventas.length===0 && (
+                  <tr><td colSpan={7} style={{...tdStyle,textAlign:'center',color:'var(--color-text-secondary)',padding:'2rem'}}>Sin registros. Haga clic en "+ Agregar".</td></tr>
+                )}
+              </tbody>
+              <tfoot>
+                <tr>
+                  <td colSpan={4} style={{...totStyle,color:'var(--color-text-secondary)'}}>Total</td>
+                  <td style={{...totStyle,textAlign:'right',fontFamily:'var(--font-mono)',fontSize:13}}>₡{fmtN(totalP)}</td>
+                  <td style={totStyle}></td>
+                  <td style={{...totStyle,textAlign:'right',fontFamily:'var(--font-mono)',fontSize:13,color:BLUE}}>₡{fmtN(totalCom)}</td>
+                </tr>
+              </tfoot>
+            </table>
+          </div>
+        </div>
+
+        {/* Inversión WEB Table */}
+        <div style={{background:'var(--color-background-primary)',border:'0.5px solid var(--color-border-tertiary)',borderRadius:10,overflow:'hidden'}}>
+          <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',padding:'12px 14px',borderBottom:'0.5px solid var(--color-border-tertiary)'}}>
+            <div>
+              <span style={{fontWeight:500,fontSize:14,color:'var(--color-text-primary)'}}>Inversión WEB</span>
+              <span style={{fontSize:12,color:'var(--color-text-secondary)',marginLeft:8}}>Google Ads</span>
+            </div>
+            <button onClick={()=>setInvModal('new')} style={{padding:'6px 14px',borderRadius:6,border:'1px solid #7c3aed',background:'#7c3aed',color:'white',cursor:'pointer',fontSize:13,fontWeight:500}}>+ Agregar</button>
+          </div>
+          <div style={{overflowX:'auto',maxHeight:520,overflowY:'auto'}}>
+            <table style={{width:'100%',borderCollapse:'collapse'}}>
+              <thead>
+                <tr>
+                  {['Fecha','Colones ₡','USD $'].map(h=>(
+                    <th key={h} style={thStyle}>{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {inv.map(r=>(
+                  <tr key={r.id} onClick={()=>setInvModal(r)} style={{cursor:'pointer'}}
+                    onMouseEnter={e=>e.currentTarget.style.background='var(--color-background-secondary)'}
+                    onMouseLeave={e=>e.currentTarget.style.background='transparent'}>
+                    <td style={{...tdStyle,fontSize:12,color:'var(--color-text-secondary)'}}>{r.fecha?.slice(5).replace('-','/')}</td>
+                    <td style={{...tdStyle,textAlign:'right',fontFamily:'var(--font-mono)',fontSize:12}}>₡{fmtN(r.col)}</td>
+                    <td style={{...tdStyle,textAlign:'right',fontFamily:'var(--font-mono)',fontSize:12,color:'#7c3aed'}}>${fmtN(r.usd)}</td>
+                  </tr>
+                ))}
+                {inv.length===0 && (
+                  <tr><td colSpan={3} style={{...tdStyle,textAlign:'center',color:'var(--color-text-secondary)',padding:'2rem'}}>Sin registros</td></tr>
+                )}
+              </tbody>
+              <tfoot>
+                <tr>
+                  <td style={{...totStyle,color:'var(--color-text-secondary)'}}>Total</td>
+                  <td style={{...totStyle,textAlign:'right',fontFamily:'var(--font-mono)',color:'#dc2626'}}>₡{fmtN(totalCol)}</td>
+                  <td style={{...totStyle,textAlign:'right',fontFamily:'var(--font-mono)',color:'#7c3aed'}}>${fmtN(totalUSD)}</td>
+                </tr>
+              </tfoot>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      {ventaModal && <VentaModal venta={ventaModal==='new'?null:ventaModal} onSave={saveVenta} onDelete={deleteVenta} onClose={()=>setVentaModal(null)} />}
+      {invModal && <InvModal row={invModal==='new'?null:invModal} onSave={saveInv} onDelete={deleteInv} onClose={()=>setInvModal(null)} />}
+    </div>
+  );
+}
+
+function ResumenView({months}) {
+  const summary = MESES.map(m => {
+    const d = months[m]||{ventas:[],inv:[]};
+    const prima = d.ventas.reduce((s,v)=>s+Number(v.p||0),0);
+    const ing = d.ventas.reduce((s,v)=>s+calcCom(Number(v.p||0),v.l),0);
+    const inv = d.inv.reduce((s,r)=>s+Number(r.col||0),0);
+    return {m,prima,ing,inv,roi:inv>0?(ing-inv)/inv*100:0};
+  });
+  const totalPrima = summary.reduce((s,r)=>s+r.prima,0);
+  const totalIng = summary.reduce((s,r)=>s+r.ing,0);
+  const totalInv = summary.reduce((s,r)=>s+r.inv,0);
+  const pct = Math.min(100,(totalPrima/META)*100);
+  const maxPrima = Math.max(...summary.map(r=>r.prima),1);
+
+  const thS = {padding:'8px 12px',fontSize:11,fontWeight:500,color:'var(--color-text-secondary)',textAlign:'left',borderBottom:'0.5px solid var(--color-border-tertiary)',background:'var(--color-background-secondary)',whiteSpace:'nowrap'};
+  const tdS = {padding:'9px 12px',fontSize:13,borderBottom:'0.5px solid var(--color-border-tertiary)'};
+
+  return (
+    <div style={{padding:16,maxWidth:1200,margin:'0 auto'}}>
+      {/* Meta Progress */}
+      <div style={{background:'var(--color-background-primary)',border:'0.5px solid var(--color-border-tertiary)',borderRadius:10,padding:'20px 24px',marginBottom:16}}>
+        <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-end',marginBottom:12}}>
+          <div>
+            <div style={{fontSize:12,color:'var(--color-text-secondary)',marginBottom:2}}>Meta Anual 2026</div>
+            <div style={{fontSize:28,fontWeight:500,color:'var(--color-text-primary)'}}>₡{fmtN(totalPrima)}</div>
+            <div style={{fontSize:12,color:'var(--color-text-secondary)'}}>de ₡{fmtN(META)}</div>
+          </div>
+          <div style={{textAlign:'right'}}>
+            <div style={{fontSize:32,fontWeight:500,color:BLUE}}>{pct.toFixed(1)}%</div>
+            <div style={{fontSize:12,color:'var(--color-text-secondary)'}}>alcanzado</div>
+          </div>
+        </div>
+        <div style={{height:12,background:'var(--color-background-secondary)',borderRadius:6,overflow:'hidden'}}>
+          <div style={{width:`${pct}%`,height:'100%',background:BLUE,borderRadius:6,transition:'width 0.5s'}}></div>
+        </div>
+        <div style={{display:'flex',justifyContent:'space-between',marginTop:6}}>
+          <span style={{fontSize:11,color:'var(--color-text-secondary)'}}>₡0</span>
+          <span style={{fontSize:11,color:'var(--color-text-secondary)'}}>₡{fmtN(META)}</span>
+        </div>
+      </div>
+
+      {/* KPI Row */}
+      <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(160px,1fr))',gap:10,marginBottom:16}}>
+        {[
+          {l:'Ingresos WEB Total',v:`₡${fmtN(totalIng)}`,c:BLUE},
+          {l:'Inversión ADS Total',v:`₡${fmtN(totalInv)}`,c:'#dc2626'},
+          {l:'ROI General',v:`${totalInv>0?((totalIng-totalInv)/totalInv*100).toFixed(1):0}%`,c:'#15803d'},
+          {l:'Pendiente Meta',v:`₡${fmtN(META-totalPrima)}`,c:'#d97706'},
+        ].map(({l,v,c})=>(
+          <div key={l} style={{background:'var(--color-background-primary)',border:'0.5px solid var(--color-border-tertiary)',borderRadius:10,padding:'12px 14px'}}>
+            <div style={{fontSize:11,color:'var(--color-text-secondary)',marginBottom:4}}>{l}</div>
+            <div style={{fontSize:17,fontWeight:500,color:c}}>{v}</div>
+          </div>
+        ))}
+      </div>
+
+      {/* Bar Chart */}
+      <div style={{background:'var(--color-background-primary)',border:'0.5px solid var(--color-border-tertiary)',borderRadius:10,padding:'16px 20px',marginBottom:16}}>
+        <div style={{fontSize:13,fontWeight:500,marginBottom:16,color:'var(--color-text-primary)'}}>Primas por mes</div>
+        <div style={{display:'flex',alignItems:'flex-end',gap:8,height:140}}>
+          {summary.map(({m,prima})=>{
+            const h = prima > 0 ? Math.max(4,(prima/maxPrima)*120) : 2;
+            const hasData = prima > 0;
+            return (
+              <div key={m} style={{flex:1,display:'flex',flexDirection:'column',alignItems:'center',gap:4}}>
+                <div style={{fontSize:10,color:BLUE,fontFamily:'var(--font-mono)',opacity:hasData?1:0}}>
+                  {prima>1e8?`${(prima/1e9).toFixed(1)}B`:`${(prima/1e6).toFixed(0)}M`}
+                </div>
+                <div style={{width:'100%',height:h,background:hasData?BLUE:'var(--color-background-secondary)',borderRadius:'4px 4px 0 0',transition:'height 0.3s'}}></div>
+                <div style={{fontSize:10,color:'var(--color-text-secondary)',transform:'rotate(-45deg)',whiteSpace:'nowrap',marginTop:4}}>{m.slice(0,3)}</div>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* Summary Table */}
+      <div style={{background:'var(--color-background-primary)',border:'0.5px solid var(--color-border-tertiary)',borderRadius:10,overflow:'hidden'}}>
+        <div style={{padding:'12px 16px',borderBottom:'0.5px solid var(--color-border-tertiary)',fontWeight:500,fontSize:14}}>Resumen mensual</div>
+        <div style={{overflowX:'auto'}}>
+          <table style={{width:'100%',borderCollapse:'collapse'}}>
+            <thead>
+              <tr>
+                {['Mes','Primas','Ingresos WEB','Inversión','ROI','Estado'].map(h=>(
+                  <th key={h} style={thS}>{h}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {summary.map(({m,prima,ing,inv,roi})=>(
+                <tr key={m}
+                  onMouseEnter={e=>e.currentTarget.style.background='var(--color-background-secondary)'}
+                  onMouseLeave={e=>e.currentTarget.style.background='transparent'}>
+                  <td style={{...tdS,fontWeight:500}}>{m}</td>
+                  <td style={{...tdS,fontFamily:'var(--font-mono)',fontSize:12}}>₡{fmtN(prima)}</td>
+                  <td style={{...tdS,fontFamily:'var(--font-mono)',fontSize:12,color:BLUE}}>₡{fmtN(ing)}</td>
+                  <td style={{...tdS,fontFamily:'var(--font-mono)',fontSize:12,color:'#dc2626'}}>₡{fmtN(inv)}</td>
+                  <td style={{...tdS,fontFamily:'var(--font-mono)',fontSize:12,color:roi>=0?'#15803d':'#dc2626'}}>
+                    {prima>0?`${roi>=0?'+':''}${roi.toFixed(1)}%`:'—'}
+                  </td>
+                  <td style={tdS}>
+                    {prima>0 ? <span style={{fontSize:11,padding:'2px 8px',borderRadius:10,background:'#f0fdf4',color:'#15803d',fontWeight:500}}>Con datos</span>
+                             : <span style={{fontSize:11,padding:'2px 8px',borderRadius:10,background:'var(--color-background-secondary)',color:'var(--color-text-secondary)'}}>Pendiente</span>}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+            <tfoot>
+              <tr style={{background:'var(--color-background-secondary)'}}>
+                <td style={{...tdS,fontWeight:500,borderTop:'1px solid var(--color-border-secondary)'}}>TOTAL</td>
+                <td style={{...tdS,fontFamily:'var(--font-mono)',fontSize:12,fontWeight:500,borderTop:'1px solid var(--color-border-secondary)'}}>₡{fmtN(totalPrima)}</td>
+                <td style={{...tdS,fontFamily:'var(--font-mono)',fontSize:12,fontWeight:500,color:BLUE,borderTop:'1px solid var(--color-border-secondary)'}}>₡{fmtN(totalIng)}</td>
+                <td style={{...tdS,fontFamily:'var(--font-mono)',fontSize:12,fontWeight:500,color:'#dc2626',borderTop:'1px solid var(--color-border-secondary)'}}>₡{fmtN(totalInv)}</td>
+                <td style={{...tdS,fontFamily:'var(--font-mono)',fontSize:12,fontWeight:500,color:'#15803d',borderTop:'1px solid var(--color-border-secondary)'}}>
+                  {totalInv>0?`+${((totalIng-totalInv)/totalInv*100).toFixed(1)}%`:'—'}
+                </td>
+                <td style={{...tdS,borderTop:'1px solid var(--color-border-secondary)'}}></td>
+              </tr>
+            </tfoot>
+          </table>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+export default function App() {
+  const [months, setMonths] = useState(null);
+  const [tab, setTab] = useState('Enero');
+  const [saving, setSaving] = useState(false);
+  const [saved, setSaved] = useState(false);
+
+  useEffect(()=>{
+    (async()=>{
+      try {
+        const stored = await window.storage.get('cvdata2026');
+        setMonths(stored?.value ? JSON.parse(stored.value) : INIT);
+      } catch { setMonths(INIT); }
+    })();
+  },[]);
+
+  const save = useCallback(async(data)=>{
+    setSaving(true);
+    try { await window.storage.set('cvdata2026',JSON.stringify(data)); setSaved(true); setTimeout(()=>setSaved(false),2000); }
+    catch(e){ console.error(e); }
+    setSaving(false);
+  },[]);
+
+  const updateMonths = useCallback((upd)=>{
+    setMonths(prev=>{
+      const next = typeof upd==='function' ? upd(prev) : upd;
+      save(next);
+      return next;
+    });
+  },[save]);
+
+  if(!months) return (
+    <div style={{display:'flex',alignItems:'center',justifyContent:'center',height:200,color:'var(--color-text-secondary)'}}>
+      <div style={{textAlign:'center'}}>
+        <div style={{fontSize:20,marginBottom:8}}>⏳</div>
+        <div style={{fontSize:14}}>Cargando datos...</div>
+      </div>
+    </div>
+  );
+
+  const totalAnual = MESES.reduce((s,m)=>s+(months[m]?.ventas||[]).reduce((ss,v)=>ss+Number(v.p||0),0),0);
+  const pctMeta = Math.min(100,(totalAnual/META)*100);
+
+  return (
+    <div style={{minHeight:'100vh',background:'var(--color-background-tertiary)',fontFamily:'var(--font-sans)'}}>
+      {/* Header */}
+      <div style={{background:BLUE,color:'white',padding:'10px 20px',display:'flex',justifyContent:'space-between',alignItems:'center'}}>
+        <div style={{display:'flex',alignItems:'center',gap:12}}>
+          <div style={{width:36,height:36,borderRadius:8,background:'rgba(255,255,255,0.15)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:16}}>📊</div>
+          <div>
+            <div style={{fontSize:15,fontWeight:500}}>Control de Ventas 2026</div>
+            <div style={{fontSize:11,opacity:0.75}}>Seguros del INS · Agente Exclusivo</div>
+          </div>
+        </div>
+        <div style={{textAlign:'right'}}>
+          <div style={{fontSize:11,opacity:0.75}}>Meta anual</div>
+          <div style={{fontSize:14,fontWeight:500}}>{pctMeta.toFixed(1)}% · ₡{fmtN(totalAnual)}</div>
+          {(saving||saved) && <div style={{fontSize:10,opacity:0.7,marginTop:2}}>{saving?'Guardando...':'✓ Guardado'}</div>}
+        </div>
+      </div>
+
+      {/* Progress Bar */}
+      <div style={{height:4,background:`${BLUE}30`}}>
+        <div style={{width:`${pctMeta}%`,height:'100%',background:BLUE,transition:'width 0.5s'}}></div>
+      </div>
+
+      {/* Tabs */}
+      <div style={{background:'var(--color-background-primary)',borderBottom:'0.5px solid var(--color-border-tertiary)',display:'flex',overflowX:'auto',paddingLeft:8}}>
+        {[...MESES,'Resumen'].map((t,i)=>{
+          const active = tab===t;
+          const hasData = i<12 && (months[t]?.ventas?.length>0);
+          return (
+            <button key={t} onClick={()=>setTab(t)} style={{
+              padding:'10px 12px',fontSize:13,fontWeight:active?500:400,
+              color:active?BLUE:'var(--color-text-secondary)',
+              borderBottom:active?`2px solid ${BLUE}`:'2px solid transparent',
+              background:'none',border:'none',cursor:'pointer',
+              whiteSpace:'nowrap',borderRadius:0,position:'relative',outline:'none'
+            }}>
+              {i<12 ? t.slice(0,3) : '📈 Resumen'}
+              {hasData && !active && <span style={{position:'absolute',top:8,right:6,width:5,height:5,background:'#22c55e',borderRadius:'50%',display:'block'}}></span>}
+            </button>
+          );
+        })}
+      </div>
+
+      {/* Content */}
+      {tab==='Resumen'
+        ? <ResumenView months={months}/>
+        : <MonthView mes={tab} data={months[tab]||{ventas:[],inv:[]}} updateMonths={updateMonths}/>
+      }
+    </div>
+  );
+}
