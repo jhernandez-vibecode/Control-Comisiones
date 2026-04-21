@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-<title>Control de Ventas 2026 — Seguros del INS</title>
+<title>Control de Ventas — Seguros del INS</title>
 <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%230369a1'/%3E%3Crect x='7' y='17' width='4' height='9' rx='1' fill='%23fff'/%3E%3Crect x='14' y='11' width='4' height='15' rx='1' fill='%23fff'/%3E%3Crect x='21' y='7' width='4' height='19' rx='1' fill='%23fff'/%3E%3C/svg%3E"/>
 <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
 <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
@@ -36,6 +36,10 @@ const nextId=()=>Date.now().toString(36)+Math.random().toString(36).slice(2,5);
 const fmtN=(n)=>Math.round(n||0).toLocaleString('es-CR');
 const calcCom=(prima,linea,rates)=>Number(prima||0)*((rates||DEFAULT_COM)[linea]||0.15);
 const LINEA_COLORS={AUTOMOVILES:'#0369a1','RT CONSTRUCCIÓN':'#7c3aed','Viajero Asistencia':'#059669','Estudiantil Individual':'#d97706','EQUIPO CONTRATISTA':'#dc2626','INS MEDICAL':'#db2777','HOGAR COMPRENSIVO':'#0891b2',OTROS:'#6b7280'};
+/* Year handling: one set of Sheets tabs + localStorage keys per year */
+const DEFAULT_YEAR=2026;
+const tabsFor=(y)=>({ventas:`Ventas_${y}`,inv:`Inversion_${y}`,config:`Config_${y}`});
+const lsKeys=(y)=>({data:`cvdata_${y}`,rates:`cvrates_${y}`});
 /* Quincena: auto-detect from name, or use stored value */
 const getQ=(v)=>v.q||((/IIQ/i.test(v.c))?'IIQ':(/\bIQ\b/i.test(v.c))?'IQ':'');
 const QBadge=({q})=>{
@@ -79,13 +83,13 @@ async function gFetch(url,opts={}){
 
 /* Build flat rows from months state */
 function monthsToRows(months,rates){
-  const vH=['MES','ID','CLIENTE','LINEA','FORMA','PRIMA','REFERENCIA','QUINCENA'];
+  const vH=['MES','ID','CLIENTE','LINEA','FORMA','PRIMA','REFERENCIA','QUINCENA','CANTIDAD'];
   const iH=['MES','ID','FECHA','COLONES','DOLARES'];
   const cH=['MES','TC','LINEA','TASA'];
   const vRows=[vH],iRows=[iH],cRows=[cH];
   MESES.forEach(m=>{
     const d=months[m]||{ventas:[],inv:[],tc:505};
-    (d.ventas||[]).forEach(v=>vRows.push([m,v.id,v.c,v.l,v.f,Number(v.p||0),v.v,getQ(v)]));
+    (d.ventas||[]).forEach(v=>vRows.push([m,v.id,v.c,v.l,v.f,Number(v.p||0),v.v,getQ(v),(v.n!==undefined&&v.n!==''&&v.n!==null)?Number(v.n):'']));
     (d.inv||[]).forEach(r=>iRows.push([m,r.id,r.fecha,Number(r.col||0),Number(r.usd||0)]));
   });
   MESES.forEach((m,i)=>{
@@ -104,8 +108,12 @@ function rowsToMonths(vRows,iRows,cRows){
   const rates={...DEFAULT_COM};
   /* ventas */
   vRows.slice(1).forEach(r=>{
-    const [mes,id,c,l,f,p,v,q]=r;
-    if(mes&&id&&d[mes]) d[mes].ventas.push({id,c,l,f,p:Number(p)||0,v,q:q||''});
+    const [mes,id,c,l,f,p,v,q,n]=r;
+    if(mes&&id&&d[mes]){
+      const rec={id,c,l,f,p:Number(p)||0,v,q:q||''};
+      if(n!==undefined&&n!==''&&n!==null) rec.n=Number(n)||0;
+      d[mes].ventas.push(rec);
+    }
   });
   /* inversion */
   iRows.slice(1).forEach(r=>{
@@ -121,51 +129,71 @@ function rowsToMonths(vRows,iRows,cRows){
   return{months:d,rates};
 }
 
-/* Ensure required sheets exist, creating them if needed */
-async function ensureSheets(){
+/* Ensure required sheets exist for the given year, creating them if needed */
+async function ensureSheets(year){
+  const t=tabsFor(year);
   const meta=await gFetch(`https://sheets.googleapis.com/v4/spreadsheets/${SHEET_ID}?fields=sheets.properties.title`);
   const existing=(meta.sheets||[]).map(s=>s.properties.title);
-  const needed=['Ventas','Inversion','Config'];
+  const needed=[t.ventas,t.inv,t.config];
   const toCreate=needed.filter(n=>!existing.includes(n));
-  if(toCreate.length===0) return;
+  if(toCreate.length===0) return {existing};
   await gFetch(`https://sheets.googleapis.com/v4/spreadsheets/${SHEET_ID}:batchUpdate`,{
     method:'POST',
     body:JSON.stringify({requests:toCreate.map(title=>({addSheet:{properties:{title}}}))})
   });
+  /* If this is the default year and legacy tabs exist with data, seed the new tabs from them */
+  if(year===DEFAULT_YEAR&&existing.includes('Ventas')&&!existing.includes(t.ventas)){
+    try{
+      const legacy=await gFetch(`https://sheets.googleapis.com/v4/spreadsheets/${SHEET_ID}/values:batchGet?`+
+        ['Ventas!A:I','Inversion!A:E','Config!A:D'].map(r=>`ranges=${encodeURIComponent(r)}`).join('&'));
+      const vr=legacy.valueRanges||[];
+      await gFetch(`https://sheets.googleapis.com/v4/spreadsheets/${SHEET_ID}/values:batchUpdate`,{
+        method:'POST',
+        body:JSON.stringify({valueInputOption:'RAW',data:[
+          {range:`${t.ventas}!A1`,values:vr[0]?.values||[]},
+          {range:`${t.inv}!A1`,values:vr[1]?.values||[]},
+          {range:`${t.config}!A1`,values:vr[2]?.values||[]},
+        ]})
+      });
+    }catch(e){console.warn('Legacy seed skipped:',e);}
+  }
+  return {existing};
 }
 
-/* Read all data from Sheets */
-async function sheetsRead(){
-  await ensureSheets();
-  const ranges=['Ventas!A:G','Inversion!A:E','Config!A:D'];
+/* Read all data from Sheets for a given year */
+async function sheetsRead(year){
+  const t=tabsFor(year);
+  await ensureSheets(year);
+  const ranges=[`${t.ventas}!A:I`,`${t.inv}!A:E`,`${t.config}!A:D`];
   const url=`https://sheets.googleapis.com/v4/spreadsheets/${SHEET_ID}/values:batchGet?`+ranges.map(r=>`ranges=${encodeURIComponent(r)}`).join('&');
   const data=await gFetch(url);
   const vr=data.valueRanges||[];
   const vRows=vr[0]?.values||[];
   const iRows=vr[1]?.values||[];
   const cRows=vr[2]?.values||[];
-  /* If sheets are empty (just headers or nothing), return null so caller uses INIT */
+  /* If sheets are empty (just headers or nothing), return null so caller uses INIT/empty */
   const hasData=vRows.length>1||iRows.length>1;
   if(!hasData) return null;
   return rowsToMonths(vRows,iRows,cRows);
 }
 
-/* Write all data to Sheets (clear + rewrite) */
-async function sheetsWrite(months,rates){
-  await ensureSheets();
+/* Write all data to Sheets (clear + rewrite) for a given year */
+async function sheetsWrite(months,rates,year){
+  const t=tabsFor(year);
+  await ensureSheets(year);
   const {vRows,iRows,cRows}=monthsToRows(months,rates);
   /* Clear first */
   await gFetch(`https://sheets.googleapis.com/v4/spreadsheets/${SHEET_ID}/values:batchClear`,{
     method:'POST',
-    body:JSON.stringify({ranges:['Ventas','Inversion','Config']})
+    body:JSON.stringify({ranges:[t.ventas,t.inv,t.config]})
   });
   /* Write new data */
   await gFetch(`https://sheets.googleapis.com/v4/spreadsheets/${SHEET_ID}/values:batchUpdate`,{
     method:'POST',
     body:JSON.stringify({valueInputOption:'RAW',data:[
-      {range:'Ventas!A1',values:vRows},
-      {range:'Inversion!A1',values:iRows},
-      {range:'Config!A1',values:cRows}
+      {range:`${t.ventas}!A1`,values:vRows},
+      {range:`${t.inv}!A1`,values:iRows},
+      {range:`${t.config}!A1`,values:cRows}
     ]})
   });
 }
@@ -310,7 +338,7 @@ const INIT=(()=>{
 })();
 
 /* ---- EXPORT ---- */
-function exportToExcel(months,rates){
+function exportToExcel(months,rates,year){
   const wb=XLSX.utils.book_new();
   MESES.forEach(mes=>{
     const d=months[mes]||{ventas:[],inv:[]};
@@ -354,7 +382,7 @@ function exportToExcel(months,rates){
   const tasasRows=[['LÍNEA','TASA'],...LINEAS.map(l=>[l,rates[l]||0.15])];
   const wsTasas=XLSX.utils.aoa_to_sheet(tasasRows);
   XLSX.utils.book_append_sheet(wb,wsTasas,'TASAS');
-  XLSX.writeFile(wb,'Control_Ventas_2026.xlsx');
+  XLSX.writeFile(wb,`Control_Ventas_${year||DEFAULT_YEAR}.xlsx`);
 }
 
 /* ---- UI ---- */
@@ -424,14 +452,16 @@ function VentaModal({venta,onSave,onDelete,onClose,rates}){
         <input style={inS} value={form.c} onChange={e=>set('c',e.target.value)} placeholder="Nombre del asegurado"/>
       </div>
       <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:12}}>
-        <div><label style={{fontSize:12,color:'#64748b',display:'block',marginBottom:4}}>Línea</label>
-          <select style={inS} value={form.l} onChange={e=>set('l',e.target.value)}>{LINEAS.map(l=><option key={l}>{l}</option>)}</select></div>
+        <div><label style={{fontSize:12,color:'#64748b',display:'block',marginBottom:4}}>Línea <span style={{fontSize:10,color:'#94a3b8',fontWeight:400}}>(elija o escriba una nueva)</span></label>
+          <input list="lineas-list" style={inS} value={form.l} onChange={e=>set('l',e.target.value)} placeholder="Escriba o elija..."/>
+          <datalist id="lineas-list">{LINEAS.map(l=><option key={l} value={l}/>)}</datalist></div>
         <div><label style={{fontSize:12,color:'#64748b',display:'block',marginBottom:4}}>Forma de pago</label>
           <select style={inS} value={form.f} onChange={e=>set('f',e.target.value)}>{FORMAS.map(f=><option key={f}>{f}</option>)}</select></div>
         <div><label style={{fontSize:12,color:'#64748b',display:'block',marginBottom:4}}>Prima (₡)</label>
           <input style={inS} type="number" value={form.p} onChange={e=>set('p',e.target.value)} placeholder="0"/></div>
-        <div><label style={{fontSize:12,color:'#64748b',display:'block',marginBottom:4}}>Referencia</label>
-          <select style={inS} value={form.v} onChange={e=>set('v',e.target.value)}>{VENDEDORES.map(v=><option key={v}>{v}</option>)}</select></div>
+        <div><label style={{fontSize:12,color:'#64748b',display:'block',marginBottom:4}}>Referencia <span style={{fontSize:10,color:'#94a3b8',fontWeight:400}}>(elija o escriba una nueva)</span></label>
+          <input list="vendedores-list" style={inS} value={form.v} onChange={e=>set('v',e.target.value)} placeholder="Escriba o elija..."/>
+          <datalist id="vendedores-list">{VENDEDORES.map(v=><option key={v} value={v}/>)}</datalist></div>
       </div>
       {/* Quincena selector */}
       <div style={{margin:'12px 0',display:'flex',alignItems:'center',gap:10}}>
@@ -505,7 +535,7 @@ function MonthView({mes,data,updateMonths,rates}){
 
   /* Viajero stats in USD */
   const viajeroVentas=ventas.filter(v=>v.l==='Viajero Asistencia');
-  const viajeroQty=viajeroVentas.reduce((s,v)=>s+parseQty(v.c),0);
+  const viajeroQty=viajeroVentas.reduce((s,v)=>s+qtyOf(v),0);
   const viajeroPrimaCol=viajeroVentas.reduce((s,v)=>s+Number(v.p||0),0);
   const viajeroPrimaUSD=tc>0?viajeroPrimaCol/tc:0;
   const viajeroComUSD=tc>0?viajeroVentas.reduce((s,v)=>s+calcCom(Number(v.p||0),v.l,rates),0)/tc:0;
@@ -654,7 +684,7 @@ function MonthView({mes,data,updateMonths,rates}){
   );
 }
 
-function ResumenView({months,rates}){
+function ResumenView({months,rates,year=DEFAULT_YEAR}){
   const s=MESES.map(m=>{
     const d=months[m]||{ventas:[],inv:[]};
     const prima=d.ventas.reduce((a,v)=>a+Number(v.p||0),0);
@@ -674,7 +704,7 @@ function ResumenView({months,rates}){
       <div style={{background:'white',border:'1px solid #f1f5f9',borderRadius:10,padding:'20px 24px',marginBottom:14}}>
         <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-end',marginBottom:14}}>
           <div>
-            <div style={{fontSize:11,color:'#94a3b8',textTransform:'uppercase',letterSpacing:'0.05em',marginBottom:4}}>Progreso Meta Anual 2026</div>
+            <div style={{fontSize:11,color:'#94a3b8',textTransform:'uppercase',letterSpacing:'0.05em',marginBottom:4}}>Progreso Meta Anual {year}</div>
             <div style={{fontSize:30,fontWeight:700,color:'#0f172a'}}>₡{fmtN(totP)}</div>
             <div style={{fontSize:13,color:'#94a3b8'}}>de ₡1,250,000,000 meta anual</div>
           </div>
@@ -732,7 +762,7 @@ function ResumenView({months,rates}){
               ))}
             </tbody>
             <tfoot><tr>
-              <td style={{...tot}}>TOTAL 2026</td>
+              <td style={{...tot}}>TOTAL {year}</td>
               <td style={{...tot,fontFamily:'monospace'}}>₡{fmtN(totP)}</td>
               <td style={{...tot,fontFamily:'monospace',color:BLUE}}>₡{fmtN(totI)}</td>
               <td style={{...tot,fontFamily:'monospace',color:'#dc2626'}}>₡{fmtN(totInv)}</td>
@@ -755,18 +785,49 @@ const REF2025_EST_QTY={Enero:411,Febrero:769,Marzo:361,Abril:399,Mayo:556,Junio:
 const REF2025_EST_PRIMA={Enero:4319862,Febrero:7650947,Marzo:3382535,Abril:3381351,Mayo:4765683,Junio:6000049,Julio:4369617,Agosto:5028939,Septiembre:7318812,Octubre:5336400,Noviembre:13020714,Diciembre:59884782};
 
 /* Parse quantity from batch name, e.g. "COMPRAS DIRECTAS WEB IQ ENERO (1846)" → 1846 */
-const parseQty=(name)=>{const m=name.match(/\((\d+)\)/);return m?Number(m[1]):0;};
+const parseQty=(name)=>{const m=(name||'').match(/\((\d+)\)/);return m?Number(m[1]):0;};
+/* Resolve policy count: manual override v.n (if set) takes priority over parsed name */
+const qtyOf=(v)=>(v&&v.n!==undefined&&v.n!==''&&v.n!==null)?Number(v.n)||0:parseQty(v?.c||'');
 
 /* ================================================================
    META VIAJERO VIEW  — totales en USD usando TC por mes
 ================================================================ */
-function MetaViajeroView({months,rates}){
+function MetaViajeroView({months,rates,updateMonths,year=DEFAULT_YEAR}){
   const GREEN='#059669';
+  const prevYear=year-1;
+  /* Build previous-year quantity reference: use REF2025 if prevYear===2025, else read prev year's localStorage */
+  const prevRefQty=(()=>{
+    if(prevYear===2025) return REF2025_VIAJERO_QTY;
+    const prev=lsGet(lsKeys(prevYear).data);
+    const out={};
+    MESES.forEach(m=>{
+      const v=(prev?.[m]?.ventas||[]).filter(x=>x.l==='Viajero Asistencia');
+      out[m]=v.reduce((s,x)=>s+qtyOf(x),0);
+    });
+    return out;
+  })();
+  const [editQty,setEditQty]=useState(null); /* venta id currently being edited */
+  const saveQty=(mes,ventaId,newQty)=>{
+    const n=newQty===''?undefined:(Number(newQty)||0);
+    updateMonths(prev=>({
+      ...prev,
+      [mes]:{
+        ...prev[mes],
+        ventas:(prev[mes]?.ventas||[]).map(v=>{
+          if(v.id!==ventaId) return v;
+          const next={...v};
+          if(n===undefined) delete next.n; else next.n=n;
+          return next;
+        })
+      }
+    }));
+    setEditQty(null);
+  };
   /* Collect viajero records with per-month TC conversion */
   const byMonth=MESES.map(m=>{
     const ventas=(months[m]?.ventas||[]).filter(v=>v.l==='Viajero Asistencia');
     const tc=Number(months[m]?.tc)||505;
-    const qty=ventas.reduce((s,v)=>s+parseQty(v.c),0);
+    const qty=ventas.reduce((s,v)=>s+qtyOf(v),0);
     const primaCol=ventas.reduce((s,v)=>s+Number(v.p||0),0);
     const primaUSD=tc>0?primaCol/tc:0;
     const comCol=ventas.reduce((s,v)=>s+calcCom(Number(v.p||0),v.l,rates),0);
@@ -778,10 +839,10 @@ function MetaViajeroView({months,rates}){
   const totPrimaUSD=byMonth.reduce((s,r)=>s+r.primaUSD,0);
   const totComUSD=byMonth.reduce((s,r)=>s+r.comUSD,0);
   const totPrimaCol=byMonth.reduce((s,r)=>s+r.primaCol,0);
-  const totQty25=Object.values(REF2025_VIAJERO_QTY).reduce((s,v)=>s+v,0);
+  const totQty25=Object.values(prevRefQty).reduce((s,v)=>s+(v||0),0);
   const pctQty=totQty25>0?(totQty26/totQty25*100):0;
   const fmtUSD=(n)=>Number((n||0).toFixed(2)).toLocaleString('es-CR',{minimumFractionDigits:2,maximumFractionDigits:2});
-  const maxQ=Math.max(...byMonth.map(r=>r.qty),1,...Object.values(REF2025_VIAJERO_QTY));
+  const maxQ=Math.max(...byMonth.map(r=>r.qty),1,...Object.values(prevRefQty).map(v=>v||0));
 
   const th={padding:'8px 10px',fontSize:11,fontWeight:600,color:'#64748b',textAlign:'left',borderBottom:'1px solid #f1f5f9',background:'#f8fafc',whiteSpace:'nowrap'};
   const td={padding:'9px 10px',fontSize:13,borderBottom:'1px solid #f8fafc',color:'#1e293b'};
@@ -802,10 +863,10 @@ function MetaViajeroView({months,rates}){
       {/* KPIs in USD */}
       <div style={{display:'grid',gridTemplateColumns:'repeat(4,1fr)',gap:8,marginBottom:14}}>
         {[
-          {l:'Pólizas 2026',v:fmtN(totQty26),c:'#0f172a'},
+          {l:`Pólizas ${year}`,v:fmtN(totQty26),c:'#0f172a'},
           {l:'Prima Total USD',v:`$${fmtUSD(totPrimaUSD)}`,c:GREEN},
           {l:'Ingresos WEB USD (17%)',v:`$${fmtUSD(totComUSD)}`,c:BLUE},
-          {l:'vs 2025 ('+fmtN(totQty25)+' pól.)',v:`${pctQty.toFixed(1)}%`,c:pctQty>=100?'#15803d':'#d97706'},
+          {l:`vs ${prevYear} (${fmtN(totQty25)} pól.)`,v:`${pctQty.toFixed(1)}%`,c:pctQty>=100?'#15803d':'#d97706'},
         ].map(({l,v,c})=>(
           <div key={l} style={{background:'white',border:'1px solid #f1f5f9',borderRadius:8,padding:'12px 14px'}}>
             <div style={{fontSize:10,color:'#94a3b8',marginBottom:3,textTransform:'uppercase',letterSpacing:'0.05em'}}>{l}</div>
@@ -817,21 +878,21 @@ function MetaViajeroView({months,rates}){
       {/* Comparison chart */}
       <div style={{background:'white',border:'1px solid #f1f5f9',borderRadius:10,padding:'16px 20px',marginBottom:14}}>
         <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:16}}>
-          <span style={{fontSize:12,fontWeight:600,color:'#64748b',textTransform:'uppercase',letterSpacing:'0.04em'}}>Pólizas por mes — 2025 vs 2026</span>
+          <span style={{fontSize:12,fontWeight:600,color:'#64748b',textTransform:'uppercase',letterSpacing:'0.04em'}}>Pólizas por mes — {prevYear} vs {year}</span>
           <div style={{display:'flex',gap:16,fontSize:11,color:'#64748b'}}>
-            <span style={{display:'flex',alignItems:'center',gap:5}}><span style={{width:10,height:10,borderRadius:2,background:'#d1fae5',border:'1px solid #6ee7b7',display:'inline-block'}}></span>2025</span>
-            <span style={{display:'flex',alignItems:'center',gap:5}}><span style={{width:10,height:10,borderRadius:2,background:GREEN,display:'inline-block'}}></span>2026</span>
+            <span style={{display:'flex',alignItems:'center',gap:5}}><span style={{width:10,height:10,borderRadius:2,background:'#d1fae5',border:'1px solid #6ee7b7',display:'inline-block'}}></span>{prevYear}</span>
+            <span style={{display:'flex',alignItems:'center',gap:5}}><span style={{width:10,height:10,borderRadius:2,background:GREEN,display:'inline-block'}}></span>{year}</span>
           </div>
         </div>
         <div style={{display:'flex',alignItems:'flex-end',gap:4,height:140}}>
           {MESES.map((m,i)=>{
-            const q26=byMonth[i].qty,q25=REF2025_VIAJERO_QTY[m]||0;
+            const q26=byMonth[i].qty,q25=prevRefQty[m]||0;
             const h26=q26>0?Math.max(4,q26/maxQ*110):2,h25=q25>0?Math.max(4,q25/maxQ*110):2;
             return(
               <div key={m} style={{flex:1,display:'flex',flexDirection:'column',alignItems:'center',gap:2}}>
                 <div style={{width:'100%',display:'flex',gap:2,alignItems:'flex-end',height:114}}>
-                  <div style={{flex:1,height:h25,background:'#d1fae5',border:'1px solid #6ee7b7',borderRadius:'2px 2px 0 0'}} title={`2025: ${q25}`}></div>
-                  <div style={{flex:1,height:h26,background:q26>0?GREEN:'#e2e8f0',borderRadius:'2px 2px 0 0'}} title={`2026: ${q26}`}></div>
+                  <div style={{flex:1,height:h25,background:'#d1fae5',border:'1px solid #6ee7b7',borderRadius:'2px 2px 0 0'}} title={`${prevYear}: ${q25}`}></div>
+                  <div style={{flex:1,height:h26,background:q26>0?GREEN:'#e2e8f0',borderRadius:'2px 2px 0 0'}} title={`${year}: ${q26}`}></div>
                 </div>
                 <div style={{fontSize:9,color:'#94a3b8',transform:'rotate(-40deg)',transformOrigin:'top center',marginTop:8,whiteSpace:'nowrap'}}>{m.slice(0,3)}</div>
               </div>
@@ -843,15 +904,15 @@ function MetaViajeroView({months,rates}){
       {/* Detail table — USD */}
       <div style={{background:'white',border:'1px solid #f1f5f9',borderRadius:10,overflow:'hidden'}}>
         <div style={{padding:'12px 16px',borderBottom:'1px solid #f1f5f9',display:'flex',justifyContent:'space-between',alignItems:'center'}}>
-          <span style={{fontWeight:700,fontSize:14,color:'#0f172a'}}>Detalle por mes — Viajero Asistencia 2026</span>
+          <span style={{fontWeight:700,fontSize:14,color:'#0f172a'}}>Detalle por mes — Viajero Asistencia {year}</span>
           <span style={{fontSize:11,color:'#94a3b8'}}>Montos en dólares USD</span>
         </div>
         <div style={{overflowX:'auto'}}>
           <table style={{width:'100%',borderCollapse:'collapse'}}>
-            <thead><tr>{['Mes','Lote / Descripción','Pólizas','Δ vs 2025','TC ₡/$','Prima USD','Ing. WEB USD','Prima ₡'].map(h=><th key={h} style={th}>{h}</th>)}</tr></thead>
+            <thead><tr>{['Mes','Lote / Descripción','Pólizas',`Δ vs ${prevYear}`,'TC ₡/$','Prima USD','Ing. WEB USD','Prima ₡'].map(h=><th key={h} style={th}>{h}</th>)}</tr></thead>
             <tbody>
               {byMonth.map(({m,ventas,qty,primaCol,primaUSD,comCol,comUSD,tc})=>{
-                const q25=REF2025_VIAJERO_QTY[m]||0;
+                const q25=prevRefQty[m]||0;
                 const delta=qty-q25;
                 if(ventas.length===0) return(
                   <tr key={m}>
@@ -866,7 +927,17 @@ function MetaViajeroView({months,rates}){
                     <tr key={v.id} onMouseEnter={e=>e.currentTarget.style.background='#f8fafc'} onMouseLeave={e=>e.currentTarget.style.background='transparent'}>
                       <td style={{...td,fontWeight:600,color:vi>0?'transparent':'#0f172a'}}>{vi===0?m:''}</td>
                       <td style={{...td,fontSize:12,maxWidth:260}}><div style={{overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{v.c}</div></td>
-                      <td style={{...td,textAlign:'right',fontFamily:'monospace',fontSize:12,color:GREEN,fontWeight:600}}>{fmtN(parseQty(v.c))}</td>
+                      <td style={{...td,textAlign:'right',fontFamily:'monospace',fontSize:12,color:GREEN,fontWeight:600}}>
+                        {editQty===v.id
+                          ? <input type="number" autoFocus defaultValue={qtyOf(v)}
+                              onBlur={e=>saveQty(m,v.id,e.target.value)}
+                              onKeyDown={e=>{if(e.key==='Enter')saveQty(m,v.id,e.target.value);if(e.key==='Escape')setEditQty(null);}}
+                              style={{width:70,fontSize:12,fontFamily:'monospace',fontWeight:600,color:GREEN,border:'1px solid '+GREEN,borderRadius:4,padding:'2px 6px',textAlign:'right',outline:'none'}}/>
+                          : <span onClick={()=>setEditQty(v.id)} title="Click para editar" style={{cursor:'pointer',display:'inline-flex',alignItems:'center',gap:4}}>
+                              {fmtN(qtyOf(v))}
+                              <span style={{fontSize:9,opacity:v.n!==undefined?0.9:0.35}}>{v.n!==undefined?'✏️':'✎'}</span>
+                            </span>}
+                      </td>
                       <td style={{...td,textAlign:'right',fontFamily:'monospace',fontSize:12,color:delta>=0?'#15803d':'#dc2626'}}>{vi===0?(delta>=0?'+':'')+fmtN(delta):'—'}</td>
                       <td style={{...td,textAlign:'right',fontFamily:'monospace',fontSize:12,color:'#92400e'}}>{vi===0?fmtN(tc):'—'}</td>
                       <td style={{...td,textAlign:'right',fontFamily:'monospace',fontSize:12,color:GREEN,fontWeight:600}}>${fmtUSD(vPrimaUSD)}</td>
@@ -878,7 +949,7 @@ function MetaViajeroView({months,rates}){
               })}
             </tbody>
             <tfoot><tr>
-              <td colSpan={2} style={{...tot,color:'#64748b'}}>TOTAL 2026</td>
+              <td colSpan={2} style={{...tot,color:'#64748b'}}>TOTAL {year}</td>
               <td style={{...tot,textAlign:'right',fontFamily:'monospace',color:GREEN}}>{fmtN(totQty26)}</td>
               <td style={{...tot,textAlign:'right',fontFamily:'monospace',color:totQty26>=totQty25?'#15803d':'#dc2626'}}>{totQty26>=totQty25?'+':''}{fmtN(totQty26-totQty25)}</td>
               <td style={tot}></td>
@@ -896,10 +967,32 @@ function MetaViajeroView({months,rates}){
 /* ================================================================
    ESTUDIANTIL ANUAL VIEW
 ================================================================ */
-function EstudiantilView({months,rates}){
+function EstudiantilView({months,rates,year=DEFAULT_YEAR}){
+  const prevYear=year-1;
+  /* Previous year refs: use REF2025 constants when prev===2025, else read prev year's localStorage */
+  const prevRefQty=(()=>{
+    if(prevYear===2025) return REF2025_EST_QTY;
+    const prev=lsGet(lsKeys(prevYear).data);
+    const out={};
+    MESES.forEach(m=>{
+      const v=(prev?.[m]?.ventas||[]).filter(x=>x.l==='Estudiantil Individual');
+      out[m]=v.reduce((s,x)=>s+qtyOf(x),0);
+    });
+    return out;
+  })();
+  const prevRefPrima=(()=>{
+    if(prevYear===2025) return REF2025_EST_PRIMA;
+    const prev=lsGet(lsKeys(prevYear).data);
+    const out={};
+    MESES.forEach(m=>{
+      const v=(prev?.[m]?.ventas||[]).filter(x=>x.l==='Estudiantil Individual');
+      out[m]=v.reduce((s,x)=>s+Number(x.p||0),0);
+    });
+    return out;
+  })();
   const byMonth=MESES.map(m=>{
     const ventas=(months[m]?.ventas||[]).filter(v=>v.l==='Estudiantil Individual');
-    const qty=ventas.reduce((s,v)=>s+parseQty(v.c),0);
+    const qty=ventas.reduce((s,v)=>s+qtyOf(v),0);
     const prima=ventas.reduce((s,v)=>s+Number(v.p||0),0);
     const com=ventas.reduce((s,v)=>s+calcCom(Number(v.p||0),v.l,rates),0);
     return{m,ventas,qty,prima,com};
@@ -907,12 +1000,12 @@ function EstudiantilView({months,rates}){
   const totQty26=byMonth.reduce((s,r)=>s+r.qty,0);
   const totPrima26=byMonth.reduce((s,r)=>s+r.prima,0);
   const totCom26=byMonth.reduce((s,r)=>s+r.com,0);
-  const totQty25=Object.values(REF2025_EST_QTY).reduce((s,v)=>s+v,0);
-  const totPrima25=Object.values(REF2025_EST_PRIMA).reduce((s,v)=>s+v,0);
+  const totQty25=Object.values(prevRefQty).reduce((s,v)=>s+(v||0),0);
+  const totPrima25=Object.values(prevRefPrima).reduce((s,v)=>s+(v||0),0);
   const pctQty=totQty25>0?(totQty26/totQty25*100):0;
   const pctPrima=totPrima25>0?(totPrima26/totPrima25*100):0;
   const AMBER='#d97706';
-  const maxQ=Math.max(...byMonth.map(r=>r.qty),1,...Object.values(REF2025_EST_QTY));
+  const maxQ=Math.max(...byMonth.map(r=>r.qty),1,...Object.values(prevRefQty).map(v=>v||0));
 
   const th={padding:'8px 10px',fontSize:11,fontWeight:600,color:'#64748b',textAlign:'left',borderBottom:'1px solid #f1f5f9',background:'#f8fafc',whiteSpace:'nowrap'};
   const td={padding:'9px 10px',fontSize:13,borderBottom:'1px solid #f8fafc',color:'#1e293b'};
@@ -923,11 +1016,11 @@ function EstudiantilView({months,rates}){
       {/* KPIs */}
       <div style={{display:'grid',gridTemplateColumns:'repeat(5,1fr)',gap:8,marginBottom:14}}>
         {[
-          {l:'Pólizas 2026',v:fmtN(totQty26),c:'#0f172a'},
-          {l:'Prima 2026',v:`₡${fmtN(totPrima26)}`,c:AMBER},
+          {l:`Pólizas ${year}`,v:fmtN(totQty26),c:'#0f172a'},
+          {l:`Prima ${year}`,v:`₡${fmtN(totPrima26)}`,c:AMBER},
           {l:'Ingresos WEB (18.5%)',v:`₡${fmtN(totCom26)}`,c:BLUE},
-          {l:'Avance vs 2025 (qty)',v:`${pctQty.toFixed(1)}%`,c:pctQty>=100?'#15803d':'#d97706'},
-          {l:'Avance vs 2025 (prima)',v:`${pctPrima.toFixed(1)}%`,c:pctPrima>=100?'#15803d':'#d97706'},
+          {l:`Avance vs ${prevYear} (qty)`,v:`${pctQty.toFixed(1)}%`,c:pctQty>=100?'#15803d':'#d97706'},
+          {l:`Avance vs ${prevYear} (prima)`,v:`${pctPrima.toFixed(1)}%`,c:pctPrima>=100?'#15803d':'#d97706'},
         ].map(({l,v,c})=>(
           <div key={l} style={{background:'white',border:'1px solid #f1f5f9',borderRadius:8,padding:'10px 12px'}}>
             <div style={{fontSize:10,color:'#94a3b8',marginBottom:3,textTransform:'uppercase',letterSpacing:'0.05em'}}>{l}</div>
@@ -941,7 +1034,7 @@ function EstudiantilView({months,rates}){
         <div style={{fontSize:12,fontWeight:600,color:'#64748b',textTransform:'uppercase',letterSpacing:'0.04em',marginBottom:14}}>Progreso vs año anterior</div>
         <div style={{marginBottom:12}}>
           <div style={{display:'flex',justifyContent:'space-between',fontSize:12,color:'#64748b',marginBottom:4}}>
-            <span>Pólizas: {fmtN(totQty26)} de {fmtN(totQty25)} en 2025</span>
+            <span>Pólizas: {fmtN(totQty26)} de {fmtN(totQty25)} en {prevYear}</span>
             <span style={{fontWeight:600,color:AMBER}}>{pctQty.toFixed(1)}%</span>
           </div>
           <div style={{height:10,background:'#fef3c7',borderRadius:5,overflow:'hidden'}}>
@@ -950,7 +1043,7 @@ function EstudiantilView({months,rates}){
         </div>
         <div>
           <div style={{display:'flex',justifyContent:'space-between',fontSize:12,color:'#64748b',marginBottom:4}}>
-            <span>Prima: ₡{fmtN(totPrima26)} de ₡{fmtN(totPrima25)} en 2025</span>
+            <span>Prima: ₡{fmtN(totPrima26)} de ₡{fmtN(totPrima25)} en {prevYear}</span>
             <span style={{fontWeight:600,color:BLUE}}>{pctPrima.toFixed(1)}%</span>
           </div>
           <div style={{height:10,background:'#e0f2fe',borderRadius:5,overflow:'hidden'}}>
@@ -962,23 +1055,23 @@ function EstudiantilView({months,rates}){
       {/* Chart */}
       <div style={{background:'white',border:'1px solid #f1f5f9',borderRadius:10,padding:'16px 20px',marginBottom:14}}>
         <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:16}}>
-          <span style={{fontSize:12,fontWeight:600,color:'#64748b',textTransform:'uppercase',letterSpacing:'0.04em'}}>Pólizas por mes — 2025 vs 2026</span>
+          <span style={{fontSize:12,fontWeight:600,color:'#64748b',textTransform:'uppercase',letterSpacing:'0.04em'}}>Pólizas por mes — {prevYear} vs {year}</span>
           <div style={{display:'flex',gap:16,fontSize:11,color:'#64748b'}}>
-            <span style={{display:'flex',alignItems:'center',gap:5}}><span style={{width:10,height:10,borderRadius:2,background:'#fde68a',border:'1px solid #fcd34d',display:'inline-block'}}></span>2025</span>
-            <span style={{display:'flex',alignItems:'center',gap:5}}><span style={{width:10,height:10,borderRadius:2,background:AMBER,display:'inline-block'}}></span>2026</span>
+            <span style={{display:'flex',alignItems:'center',gap:5}}><span style={{width:10,height:10,borderRadius:2,background:'#fde68a',border:'1px solid #fcd34d',display:'inline-block'}}></span>{prevYear}</span>
+            <span style={{display:'flex',alignItems:'center',gap:5}}><span style={{width:10,height:10,borderRadius:2,background:AMBER,display:'inline-block'}}></span>{year}</span>
           </div>
         </div>
         <div style={{display:'flex',alignItems:'flex-end',gap:4,height:140}}>
           {MESES.map((m,i)=>{
             const q26=byMonth[i].qty;
-            const q25=REF2025_EST_QTY[m]||0;
+            const q25=prevRefQty[m]||0;
             const h26=q26>0?Math.max(4,q26/maxQ*110):2;
             const h25=q25>0?Math.max(4,q25/maxQ*110):2;
             return(
               <div key={m} style={{flex:1,display:'flex',flexDirection:'column',alignItems:'center',gap:2}}>
                 <div style={{width:'100%',display:'flex',gap:2,alignItems:'flex-end',height:114}}>
-                  <div style={{flex:1,height:h25,background:'#fde68a',border:'1px solid #fcd34d',borderRadius:'2px 2px 0 0'}} title={`2025: ${q25}`}></div>
-                  <div style={{flex:1,height:h26,background:q26>0?AMBER:'#e2e8f0',borderRadius:'2px 2px 0 0'}} title={`2026: ${q26}`}></div>
+                  <div style={{flex:1,height:h25,background:'#fde68a',border:'1px solid #fcd34d',borderRadius:'2px 2px 0 0'}} title={`${prevYear}: ${q25}`}></div>
+                  <div style={{flex:1,height:h26,background:q26>0?AMBER:'#e2e8f0',borderRadius:'2px 2px 0 0'}} title={`${year}: ${q26}`}></div>
                 </div>
                 <div style={{fontSize:9,color:'#94a3b8',transform:'rotate(-40deg)',transformOrigin:'top center',marginTop:8,whiteSpace:'nowrap'}}>{m.slice(0,3)}</div>
               </div>
@@ -989,14 +1082,14 @@ function EstudiantilView({months,rates}){
 
       {/* Table */}
       <div style={{background:'white',border:'1px solid #f1f5f9',borderRadius:10,overflow:'hidden'}}>
-        <div style={{padding:'12px 16px',borderBottom:'1px solid #f1f5f9',fontWeight:700,fontSize:14,color:'#0f172a'}}>Detalle por mes — Estudiantil Individual 2026</div>
+        <div style={{padding:'12px 16px',borderBottom:'1px solid #f1f5f9',fontWeight:700,fontSize:14,color:'#0f172a'}}>Detalle por mes — Estudiantil Individual {year}</div>
         <div style={{overflowX:'auto'}}>
           <table style={{width:'100%',borderCollapse:'collapse'}}>
-            <thead><tr>{['Mes','Lote / Descripción','Pólizas 2026','Pólizas 2025','Δ vs 2025','Prima 2026','Prima 2025','Ingresos WEB'].map(h=><th key={h} style={th}>{h}</th>)}</tr></thead>
+            <thead><tr>{['Mes','Lote / Descripción',`Pólizas ${year}`,`Pólizas ${prevYear}`,`Δ vs ${prevYear}`,`Prima ${year}`,`Prima ${prevYear}`,'Ingresos WEB'].map(h=><th key={h} style={th}>{h}</th>)}</tr></thead>
             <tbody>
               {byMonth.map(({m,ventas,qty,prima,com})=>{
-                const q25=REF2025_EST_QTY[m]||0;
-                const p25=REF2025_EST_PRIMA[m]||0;
+                const q25=prevRefQty[m]||0;
+                const p25=prevRefPrima[m]||0;
                 const delta=qty-q25;
                 if(ventas.length===0) return(
                   <tr key={m}>
@@ -1014,7 +1107,7 @@ function EstudiantilView({months,rates}){
                   <tr key={v.id} onMouseEnter={e=>e.currentTarget.style.background='#f8fafc'} onMouseLeave={e=>e.currentTarget.style.background='transparent'}>
                     <td style={{...td,fontWeight:600,color:vi>0?'transparent':'#0f172a'}}>{vi===0?m:''}</td>
                     <td style={{...td,fontSize:12,maxWidth:240}}><div style={{overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{v.c}</div></td>
-                    <td style={{...td,textAlign:'right',fontFamily:'monospace',fontSize:12,color:AMBER,fontWeight:600}}>{fmtN(parseQty(v.c))}</td>
+                    <td style={{...td,textAlign:'right',fontFamily:'monospace',fontSize:12,color:AMBER,fontWeight:600}}>{fmtN(qtyOf(v))}</td>
                     <td style={{...td,textAlign:'right',fontFamily:'monospace',fontSize:12,color:'#94a3b8'}}>{vi===0?fmtN(q25):'—'}</td>
                     <td style={{...td,textAlign:'right',fontFamily:'monospace',fontSize:12,color:delta>=0?'#15803d':'#dc2626'}}>{vi===0?(delta>=0?'+':'')+fmtN(delta):'—'}</td>
                     <td style={{...td,textAlign:'right',fontFamily:'monospace',fontSize:12}}>₡{fmtN(v.p)}</td>
@@ -1025,7 +1118,7 @@ function EstudiantilView({months,rates}){
               })}
             </tbody>
             <tfoot><tr>
-              <td colSpan={2} style={{...tot,color:'#64748b'}}>TOTAL 2026</td>
+              <td colSpan={2} style={{...tot,color:'#64748b'}}>TOTAL {year}</td>
               <td style={{...tot,textAlign:'right',fontFamily:'monospace',color:AMBER}}>{fmtN(totQty26)}</td>
               <td style={{...tot,textAlign:'right',fontFamily:'monospace',color:'#94a3b8'}}>{fmtN(totQty25)}</td>
               <td style={{...tot,textAlign:'right',fontFamily:'monospace',color:totQty26>=totQty25?'#15803d':'#dc2626'}}>{totQty26>=totQty25?'+':''}{fmtN(totQty26-totQty25)}</td>
@@ -1050,39 +1143,53 @@ const EXTRA_TABS=[
 ];
 
 function App(){
+  /* One-time migration: legacy cvdata2026/cvrates2026 → cvdata_2026/cvrates_2026 */
+  if(typeof window!=='undefined'&&!window.__cvMigrated){
+    window.__cvMigrated=true;
+    const oldD=lsGet('cvdata2026'),oldR=lsGet('cvrates2026');
+    if(oldD&&!lsGet('cvdata_2026')) lsSet('cvdata_2026',oldD);
+    if(oldR&&!lsGet('cvrates_2026')) lsSet('cvrates_2026',oldR);
+  }
+  const initialYear=Number(lsGet('cvyear'))||DEFAULT_YEAR;
+  const emptyMonths=()=>{const d={};MESES.forEach(m=>d[m]={ventas:[],inv:[],tc:505});return d;};
+  const loadYearLS=(y)=>lsGet(lsKeys(y).data)||(y===DEFAULT_YEAR?INIT:emptyMonths());
+  const loadRatesLS=(y)=>lsGet(lsKeys(y).rates)||{...DEFAULT_COM};
+
+  const [year,setYear]=useState(initialYear);
   const [months,setMonths]=useState(null);
-  const [rates,setRates]=useState({...DEFAULT_COM});
+  const [rates,setRates]=useState(loadRatesLS(initialYear));
   const [tab,setTab]=useState('Enero');
   const [showTasas,setShowTasas]=useState(false);
   const [exporting,setExporting]=useState(false);
   const [authState,setAuthState]=useState('idle'); /* idle | connecting | ready | offline */
   const [syncStatus,setSyncStatus]=useState(''); /* '' | syncing | synced | error */
   const saveTimer=React.useRef(null);
+  const yearRef=React.useRef(initialYear);
 
   /* ---- AUTH + LOAD ---- */
-  const loadFromSheets=useCallback(async()=>{
+  const loadFromSheets=useCallback(async(y)=>{
+    const targetYear=y||yearRef.current;
     setAuthState('connecting');
     try{
-      const result=await sheetsRead();
+      const result=await sheetsRead(targetYear);
       if(result){
         setMonths(result.months);
         setRates(result.rates);
-        lsSet('cvdata2026',result.months);
-        lsSet('cvrates2026',result.rates);
+        lsSet(lsKeys(targetYear).data,result.months);
+        lsSet(lsKeys(targetYear).rates,result.rates);
       } else {
-        /* Sheets are empty — write INIT data */
-        const cached=lsGet('cvdata2026');
-        const initData=cached||INIT;
+        /* Sheets are empty — seed with local cache or INIT (default year only) */
+        const cached=lsGet(lsKeys(targetYear).data);
+        const initData=cached||(targetYear===DEFAULT_YEAR?INIT:emptyMonths());
         setMonths(initData);
-        await sheetsWrite(initData,DEFAULT_COM);
+        await sheetsWrite(initData,DEFAULT_COM,targetYear);
       }
       setAuthState('ready');
     }catch(e){
       console.error('Sheets read error',e);
-      /* Fallback to localStorage */
-      const cached=lsGet('cvdata2026');
-      const cachedRates=lsGet('cvrates2026');
-      setMonths(cached||INIT);
+      const cached=lsGet(lsKeys(targetYear).data);
+      const cachedRates=lsGet(lsKeys(targetYear).rates);
+      setMonths(cached||(targetYear===DEFAULT_YEAR?INIT:emptyMonths()));
       if(cachedRates) setRates(cachedRates);
       setAuthState('offline');
     }
@@ -1091,11 +1198,8 @@ function App(){
   useEffect(()=>{
     const tryInit=()=>{
       if(initGIS()){
-        /* Load from localStorage immediately — no silent popup */
-        const cached=lsGet('cvdata2026');
-        const cachedRates=lsGet('cvrates2026');
-        setMonths(cached||INIT);
-        if(cachedRates) setRates(cachedRates);
+        setMonths(loadYearLS(initialYear));
+        setRates(loadRatesLS(initialYear));
         setAuthState('offline');
       } else {
         setTimeout(tryInit,300);
@@ -1105,17 +1209,16 @@ function App(){
   },[]);
 
   /* ---- SAVE (debounced 800ms) ---- */
-  const save=useCallback((data,r)=>{
-    /* Always save to localStorage immediately */
-    lsSet('cvdata2026',data);
-    if(r) lsSet('cvrates2026',r);
-    /* Debounce Sheets write */
+  const save=useCallback((data,r,y)=>{
+    const yr=y||yearRef.current;
+    lsSet(lsKeys(yr).data,data);
+    if(r) lsSet(lsKeys(yr).rates,r);
     if(saveTimer.current) clearTimeout(saveTimer.current);
     setSyncStatus('syncing');
     saveTimer.current=setTimeout(async()=>{
       if(!gToken){setSyncStatus('');return;}
       try{
-        await sheetsWrite(data,r||rates);
+        await sheetsWrite(data,r||rates,yr);
         setSyncStatus('synced');
         setTimeout(()=>setSyncStatus(''),2500);
       }catch(e){
@@ -1136,26 +1239,43 @@ function App(){
     setShowTasas(false);
   };
 
+  const changeYear=useCallback((newYear)=>{
+    if(newYear===yearRef.current) return;
+    /* Flush any pending save for current year */
+    if(saveTimer.current){clearTimeout(saveTimer.current);saveTimer.current=null;}
+    yearRef.current=newYear;
+    lsSet('cvyear',newYear);
+    setYear(newYear);
+    setMonths(loadYearLS(newYear));
+    setRates(loadRatesLS(newYear));
+    setSyncStatus('');
+    /* If connected, pull fresh data from Sheets for the new year */
+    if(gToken){
+      loadFromSheets(newYear).catch(e=>console.error('Year switch load error',e));
+    }
+  },[loadFromSheets]);
+
   const handleExport=()=>{
     setExporting(true);
-    setTimeout(()=>{try{exportToExcel(months,rates);}catch(e){alert('Error: '+e.message);}setExporting(false);},100);
+    setTimeout(()=>{try{exportToExcel(months,rates,year);}catch(e){alert('Error: '+e.message);}setExporting(false);},100);
   };
 
   const handleLogin=()=>{
     if(!tokenClient){alert('Cargando Google... intente en un momento.');return;}
     _tokenCallback=()=>{
       _tokenCallback=null;
+      const yr=yearRef.current;
       /* Load fresh data from Sheets */
-      sheetsRead().then(result=>{
+      sheetsRead(yr).then(result=>{
         if(result){
           setMonths(result.months);
           setRates(result.rates);
-          lsSet('cvdata2026',result.months);
-          lsSet('cvrates2026',result.rates);
+          lsSet(lsKeys(yr).data,result.months);
+          lsSet(lsKeys(yr).rates,result.rates);
         } else {
           /* Sheets vacíos — subir datos locales */
-          const cur=lsGet('cvdata2026')||INIT;
-          return sheetsWrite(cur,rates);
+          const cur=lsGet(lsKeys(yr).data)||(yr===DEFAULT_YEAR?INIT:emptyMonths());
+          return sheetsWrite(cur,rates,yr);
         }
       }).then(()=>{
         setAuthState('ready');
@@ -1213,11 +1333,19 @@ function App(){
         <div style={{display:'flex',alignItems:'center',gap:10}}>
           <div style={{width:34,height:34,borderRadius:8,background:'rgba(255,255,255,0.15)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:15}}>📊</div>
           <div>
-            <div style={{fontSize:14,fontWeight:700}}>Control de Ventas 2026</div>
+            <div style={{fontSize:14,fontWeight:700}}>Control de Ventas {year}</div>
             <div style={{fontSize:11,opacity:0.75}}>Seguros del INS · Agente Exclusivo</div>
           </div>
         </div>
         <div style={{display:'flex',alignItems:'center',gap:8}}>
+          {/* Year selector */}
+          <div style={{display:'flex',alignItems:'center',gap:4,padding:'4px 6px',borderRadius:6,border:'1px solid rgba(255,255,255,0.3)',background:'rgba(255,255,255,0.12)'}}>
+            <button onClick={()=>changeYear(year-1)} title="Año anterior" style={{width:22,height:22,borderRadius:4,border:'none',background:'rgba(255,255,255,0.15)',color:'white',cursor:'pointer',fontSize:14,fontWeight:700,lineHeight:1,padding:0}}>‹</button>
+            <select value={year} onChange={e=>changeYear(Number(e.target.value))} style={{background:'transparent',border:'none',color:'white',fontSize:13,fontWeight:700,cursor:'pointer',outline:'none',padding:'0 4px',appearance:'none'}}>
+              {(()=>{const cur=new Date().getFullYear();const yrs=new Set([year,DEFAULT_YEAR,cur,cur+1]);for(let y=DEFAULT_YEAR;y<=cur+2;y++)yrs.add(y);return[...yrs].sort((a,b)=>a-b).map(y=><option key={y} value={y} style={{color:'#0f172a'}}>{y}</option>);})()}
+            </select>
+            <button onClick={()=>changeYear(year+1)} title="Año siguiente" style={{width:22,height:22,borderRadius:4,border:'none',background:'rgba(255,255,255,0.15)',color:'white',cursor:'pointer',fontSize:14,fontWeight:700,lineHeight:1,padding:0}}>›</button>
+          </div>
           <button onClick={()=>setShowTasas(true)} style={{padding:'6px 12px',borderRadius:6,border:'1px solid rgba(255,255,255,0.3)',background:'rgba(255,255,255,0.12)',color:'white',cursor:'pointer',fontSize:12,fontWeight:600}}>⚙️ Tasas</button>
           <button onClick={handleExport} disabled={exporting} style={{padding:'6px 14px',borderRadius:6,border:'1px solid rgba(255,255,255,0.3)',background:'rgba(255,255,255,0.15)',color:'white',cursor:exporting?'wait':'pointer',fontSize:12,fontWeight:700}}>
             {exporting?'⏳ Exportando...':'📥 Exportar Excel'}
@@ -1254,9 +1382,9 @@ function App(){
         })}
       </div>
       {/* Content */}
-      {tab==='Resumen'&&<ResumenView months={months} rates={rates}/>}
-      {tab==='MetaViajero'&&<MetaViajeroView months={months} rates={rates}/>}
-      {tab==='Estudiantil'&&<EstudiantilView months={months} rates={rates}/>}
+      {tab==='Resumen'&&<ResumenView months={months} rates={rates} year={year}/>}
+      {tab==='MetaViajero'&&<MetaViajeroView months={months} rates={rates} updateMonths={updateMonths} year={year}/>}
+      {tab==='Estudiantil'&&<EstudiantilView months={months} rates={rates} year={year}/>}
       {!extraKeys.includes(tab)&&<MonthView mes={tab} data={months[tab]||{ventas:[],inv:[],tc:505}} updateMonths={updateMonths} rates={rates}/>}
       {showTasas&&<TasasModal rates={rates} onSave={saveTasas} onClose={()=>setShowTasas(false)}/>}
     </div>
