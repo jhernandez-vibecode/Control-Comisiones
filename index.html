@@ -453,15 +453,21 @@ function VentaModal({venta,onSave,onDelete,onClose,rates}){
       </div>
       <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:12}}>
         <div><label style={{fontSize:12,color:'#64748b',display:'block',marginBottom:4}}>Línea <span style={{fontSize:10,color:'#94a3b8',fontWeight:400}}>(elija o escriba una nueva)</span></label>
-          <input list="lineas-list" style={inS} value={form.l} onChange={e=>set('l',e.target.value)} placeholder="Escriba o elija..."/>
-          <datalist id="lineas-list">{LINEAS.map(l=><option key={l} value={l}/>)}</datalist></div>
+          <div style={{position:'relative'}}>
+            <input list="lineas-list" style={{...inS,paddingRight:28}} value={form.l} onChange={e=>set('l',e.target.value)} onFocus={e=>e.target.select()} placeholder="Escriba o elija..."/>
+            <span style={{position:'absolute',right:10,top:'50%',transform:'translateY(-50%)',pointerEvents:'none',color:'#64748b',fontSize:10}}>▾</span>
+            <datalist id="lineas-list">{LINEAS.map(l=><option key={l} value={l}/>)}</datalist>
+          </div></div>
         <div><label style={{fontSize:12,color:'#64748b',display:'block',marginBottom:4}}>Forma de pago</label>
           <select style={inS} value={form.f} onChange={e=>set('f',e.target.value)}>{FORMAS.map(f=><option key={f}>{f}</option>)}</select></div>
         <div><label style={{fontSize:12,color:'#64748b',display:'block',marginBottom:4}}>Prima (₡)</label>
           <input style={inS} type="number" value={form.p} onChange={e=>set('p',e.target.value)} placeholder="0"/></div>
         <div><label style={{fontSize:12,color:'#64748b',display:'block',marginBottom:4}}>Referencia <span style={{fontSize:10,color:'#94a3b8',fontWeight:400}}>(elija o escriba una nueva)</span></label>
-          <input list="vendedores-list" style={inS} value={form.v} onChange={e=>set('v',e.target.value)} placeholder="Escriba o elija..."/>
-          <datalist id="vendedores-list">{VENDEDORES.map(v=><option key={v} value={v}/>)}</datalist></div>
+          <div style={{position:'relative'}}>
+            <input list="vendedores-list" style={{...inS,paddingRight:28}} value={form.v} onChange={e=>set('v',e.target.value)} onFocus={e=>e.target.select()} placeholder="Escriba o elija..."/>
+            <span style={{position:'absolute',right:10,top:'50%',transform:'translateY(-50%)',pointerEvents:'none',color:'#64748b',fontSize:10}}>▾</span>
+            <datalist id="vendedores-list">{VENDEDORES.map(v=><option key={v} value={v}/>)}</datalist>
+          </div></div>
       </div>
       {/* Quincena selector */}
       <div style={{margin:'12px 0',display:'flex',alignItems:'center',gap:10}}>
