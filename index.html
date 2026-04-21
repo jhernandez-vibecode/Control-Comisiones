@@ -24,7 +24,7 @@ button{font-family:inherit}
 <body>
 <div id="root"></div>
 <script type="text/babel">
-const {useState,useEffect,useCallback}=React;
+const {useState,useEffect,useCallback,useRef}=React;
 const MESES=['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
 const LINEAS=['AUTOMOVILES','RT CONSTRUCCIÓN','Viajero Asistencia','Estudiantil Individual','EQUIPO CONTRATISTA','INS MEDICAL','HOGAR COMPRENSIVO','OTROS'];
 const VENDEDORES=['WEB','CARTERA','ALTAMURA','OTRO'];
@@ -405,6 +405,48 @@ function Modal({title,onClose,children,wide}){
 
 const inS={width:'100%',padding:'8px 10px',borderRadius:6,border:'1px solid #e2e8f0',background:'white',color:'#0f172a',fontSize:14,boxSizing:'border-box'};
 
+function ComboField({value,onChange,options,placeholder}){
+  const [open,setOpen]=useState(false);
+  const [q,setQ]=useState('');
+  const wrapRef=useRef(null);
+  useEffect(()=>{
+    if(!open) return;
+    const h=e=>{if(wrapRef.current&&!wrapRef.current.contains(e.target))setOpen(false);};
+    document.addEventListener('mousedown',h);
+    return()=>document.removeEventListener('mousedown',h);
+  },[open]);
+  const shown=open?q:value;
+  const filtered=options.filter(o=>!q||o.toLowerCase().includes(q.toLowerCase()));
+  const pick=(v)=>{onChange(v);setQ('');setOpen(false);};
+  return(
+    <div ref={wrapRef} style={{position:'relative'}}>
+      <input
+        style={{...inS,paddingRight:28,cursor:'text'}}
+        value={shown}
+        onFocus={()=>{setQ('');setOpen(true);}}
+        onClick={()=>{if(!open){setQ('');setOpen(true);}}}
+        onChange={e=>{setQ(e.target.value);onChange(e.target.value);if(!open)setOpen(true);}}
+        onKeyDown={e=>{if(e.key==='Escape'){setOpen(false);e.target.blur();}if(e.key==='Enter'){setOpen(false);e.target.blur();}}}
+        placeholder={placeholder}/>
+      <span onMouseDown={e=>{e.preventDefault();setQ('');setOpen(o=>!o);}}
+        style={{position:'absolute',right:6,top:0,bottom:0,width:22,display:'flex',alignItems:'center',justifyContent:'center',cursor:'pointer',color:'#64748b',fontSize:10,userSelect:'none'}}>▾</span>
+      {open&&(
+        <div style={{position:'absolute',top:'100%',left:0,right:0,zIndex:1000,background:'#fff',border:'1px solid #e2e8f0',borderRadius:6,marginTop:2,maxHeight:200,overflowY:'auto',boxShadow:'0 4px 12px rgba(0,0,0,0.12)'}}>
+          {filtered.length===0
+            ? <div style={{padding:'8px 12px',color:'#94a3b8',fontSize:12}}>Sin coincidencias — se guardará "<b style={{color:'#0f172a'}}>{q}</b>"</div>
+            : filtered.map(o=>(
+                <div key={o} onMouseDown={e=>{e.preventDefault();pick(o);}}
+                  style={{padding:'8px 12px',cursor:'pointer',fontSize:13,color:'#0f172a',background:o===value?'#f1f5f9':'#fff'}}
+                  onMouseEnter={e=>e.currentTarget.style.background='#e0f2fe'}
+                  onMouseLeave={e=>e.currentTarget.style.background=o===value?'#f1f5f9':'#fff'}>{o}</div>
+              ))
+          }
+        </div>
+      )}
+    </div>
+  );
+}
+
 function TasasModal({rates,onSave,onClose}){
   const [local,setLocal]=useState({...rates});
   const set=(k,v)=>setLocal(prev=>({...prev,[k]:v}));
@@ -453,21 +495,13 @@ function VentaModal({venta,onSave,onDelete,onClose,rates}){
       </div>
       <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:12}}>
         <div><label style={{fontSize:12,color:'#64748b',display:'block',marginBottom:4}}>Línea <span style={{fontSize:10,color:'#94a3b8',fontWeight:400}}>(elija o escriba una nueva)</span></label>
-          <div style={{position:'relative'}}>
-            <input list="lineas-list" style={{...inS,paddingRight:28}} value={form.l} onChange={e=>set('l',e.target.value)} onFocus={e=>e.target.select()} placeholder="Escriba o elija..."/>
-            <span style={{position:'absolute',right:10,top:'50%',transform:'translateY(-50%)',pointerEvents:'none',color:'#64748b',fontSize:10}}>▾</span>
-            <datalist id="lineas-list">{LINEAS.map(l=><option key={l} value={l}/>)}</datalist>
-          </div></div>
+          <ComboField value={form.l} onChange={v=>set('l',v)} options={LINEAS} placeholder="Escriba o elija..."/></div>
         <div><label style={{fontSize:12,color:'#64748b',display:'block',marginBottom:4}}>Forma de pago</label>
           <select style={inS} value={form.f} onChange={e=>set('f',e.target.value)}>{FORMAS.map(f=><option key={f}>{f}</option>)}</select></div>
         <div><label style={{fontSize:12,color:'#64748b',display:'block',marginBottom:4}}>Prima (₡)</label>
           <input style={inS} type="number" value={form.p} onChange={e=>set('p',e.target.value)} placeholder="0"/></div>
         <div><label style={{fontSize:12,color:'#64748b',display:'block',marginBottom:4}}>Referencia <span style={{fontSize:10,color:'#94a3b8',fontWeight:400}}>(elija o escriba una nueva)</span></label>
-          <div style={{position:'relative'}}>
-            <input list="vendedores-list" style={{...inS,paddingRight:28}} value={form.v} onChange={e=>set('v',e.target.value)} onFocus={e=>e.target.select()} placeholder="Escriba o elija..."/>
-            <span style={{position:'absolute',right:10,top:'50%',transform:'translateY(-50%)',pointerEvents:'none',color:'#64748b',fontSize:10}}>▾</span>
-            <datalist id="vendedores-list">{VENDEDORES.map(v=><option key={v} value={v}/>)}</datalist>
-          </div></div>
+          <ComboField value={form.v} onChange={v=>set('v',v)} options={VENDEDORES} placeholder="Escriba o elija..."/></div>
       </div>
       {/* Quincena selector */}
       <div style={{margin:'12px 0',display:'flex',alignItems:'center',gap:10}}>
