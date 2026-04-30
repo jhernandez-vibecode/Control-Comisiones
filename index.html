@@ -13,15 +13,22 @@
 <script src="https://accounts.google.com/gsi/client" async></script>
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
-body{font-family:'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:#f8fafc;color:#0F172A}
-input,select{font-family:inherit;outline:none}
-input:focus,select:focus{border-color:#0369A1!important;box-shadow:0 0 0 2px rgba(3,105,161,0.2)}
-button{font-family:inherit}
+body{font-family:'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:#f1f5f9;color:#0F172A}
+input,select{font-family:inherit;outline:none;transition:border-color .15s,box-shadow .15s}
+input:focus,select:focus{border-color:#0369A1!important;box-shadow:0 0 0 3px rgba(3,105,161,0.15)!important}
+button{font-family:inherit;transition:opacity .15s,transform .1s,box-shadow .15s;cursor:pointer}
+button:not(:disabled):active{transform:scale(0.97)}
 .sdi-display{font-family:'Space Grotesk','Inter',-apple-system,sans-serif;letter-spacing:-0.01em}
 .sdi-mono{font-family:'JetBrains Mono','SF Mono',Monaco,monospace}
-::-webkit-scrollbar{width:4px;height:4px}
+::-webkit-scrollbar{width:5px;height:5px}
 ::-webkit-scrollbar-track{background:transparent}
-::-webkit-scrollbar-thumb{background:#CBD5E1;border-radius:2px}
+::-webkit-scrollbar-thumb{background:#CBD5E1;border-radius:3px}
+::-webkit-scrollbar-thumb:hover{background:#94a3b8}
+/* Card elevation helpers */
+.cv-card{background:white;border:1px solid #e8eef4;border-radius:12px;box-shadow:0 1px 4px rgba(0,0,0,0.06),0 1px 2px rgba(0,0,0,0.04)}
+.cv-kpi{background:white;border:1px solid #e8eef4;border-radius:10px;padding:12px 16px;box-shadow:0 1px 3px rgba(0,0,0,0.05)}
+/* Chip */
+.cv-chip{display:inline-flex;align-items:center;gap:4px;font-size:11px;font-weight:600;padding:3px 10px;border-radius:999px;cursor:pointer}
 </style>
 </head>
 <body>
@@ -455,11 +462,23 @@ function ComboField({value,onChange,options,placeholder}){
 
 function TasasModal({rates,onSave,onClose}){
   const [local,setLocal]=useState({...rates});
-  const set=(k,v)=>setLocal(prev=>({...prev,[k]:v}));
+  const [newLinea,setNewLinea]=useState('');
+  const [newTasa,setNewTasa]=useState('15.0');
+  const setRate=(k,v)=>setLocal(prev=>({...prev,[k]:v}));
+  const extraLineas=Object.keys(local).filter(l=>!LINEAS.includes(l));
+  const addLinea=()=>{
+    const name=newLinea.trim().toUpperCase();
+    if(!name)return;
+    setRate(name,Number(newTasa)/100||0.15);
+    setNewLinea('');setNewTasa('15.0');
+  };
+  const removeLinea=(l)=>setLocal(prev=>{const next={...prev};delete next[l];return next;});
+  const sH={fontSize:10,fontWeight:700,color:'#64748b',textTransform:'uppercase',letterSpacing:'0.05em',marginBottom:8,paddingBottom:6,borderBottom:'1px solid #f1f5f9'};
   return(
     <Modal title="⚙️ Tasas de comisión" onClose={onClose} wide>
-      <p style={{fontSize:13,color:'#64748b',marginBottom:16}}>Edite las tasas. Los cambios afectan todos los cálculos de Ingresos WEB.</p>
-      <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10,marginBottom:20}}>
+      <p style={{fontSize:13,color:'#64748b',marginBottom:14}}>Edite las tasas. Los cambios afectan todos los cálculos de Ingresos WEB.</p>
+      <div style={sH}>Líneas base INS</div>
+      <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10,marginBottom:18}}>
         {LINEAS.map(l=>(
           <div key={l} style={{background:'#f8fafc',borderRadius:8,padding:'10px 12px',border:'1px solid #f1f5f9'}}>
             <div style={{display:'flex',alignItems:'center',gap:6,marginBottom:6}}>
@@ -469,12 +488,45 @@ function TasasModal({rates,onSave,onClose}){
             <div style={{display:'flex',alignItems:'center',gap:6}}>
               <input type="number" step="0.1" min="0" max="100" style={{...inS,width:80,textAlign:'right'}}
                 value={((local[l]||0.15)*100).toFixed(1)}
-                onChange={e=>set(l,Number(e.target.value)/100)}/>
+                onChange={e=>setRate(l,Number(e.target.value)/100)}/>
               <span style={{fontSize:13,color:'#64748b'}}>%</span>
               <span style={{fontSize:10,color:'#94a3b8'}}>orig: {((DEFAULT_COM[l]||0.15)*100).toFixed(1)}%</span>
             </div>
           </div>
         ))}
+      </div>
+      {extraLineas.length>0&&(<>
+        <div style={sH}>Líneas personalizadas</div>
+        <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10,marginBottom:18}}>
+          {extraLineas.map(l=>(
+            <div key={l} style={{background:'#fffbeb',borderRadius:8,padding:'10px 12px',border:'1px solid #fde68a',position:'relative'}}>
+              <button onClick={()=>removeLinea(l)} style={{position:'absolute',top:5,right:6,background:'none',border:'none',cursor:'pointer',color:'#ef4444',fontSize:16,lineHeight:1,padding:'1px 3px'}}>×</button>
+              <div style={{marginBottom:6}}><label style={{fontSize:12,color:'#92400e',fontWeight:600}}>{l}</label></div>
+              <div style={{display:'flex',alignItems:'center',gap:6}}>
+                <input type="number" step="0.1" min="0" max="100" style={{...inS,width:80,textAlign:'right'}}
+                  value={((local[l]||0.15)*100).toFixed(1)}
+                  onChange={e=>setRate(l,Number(e.target.value)/100)}/>
+                <span style={{fontSize:13,color:'#64748b'}}>%</span>
+              </div>
+            </div>
+          ))}
+        </div>
+      </>)}
+      <div style={{background:'#f8fafc',borderRadius:8,padding:'12px 14px',border:'1px dashed #e2e8f0',marginBottom:20}}>
+        <div style={{fontSize:11,fontWeight:600,color:'#64748b',marginBottom:10}}>+ Agregar línea personalizada</div>
+        <div style={{display:'flex',gap:8,alignItems:'flex-end'}}>
+          <div style={{flex:1}}>
+            <label style={{fontSize:10,color:'#94a3b8',display:'block',marginBottom:3}}>Nombre</label>
+            <input style={{...inS,fontSize:13}} value={newLinea} onChange={e=>setNewLinea(e.target.value)}
+              placeholder="Ej: VIDA INDIVIDUAL" onKeyDown={e=>{if(e.key==='Enter')addLinea();}}/>
+          </div>
+          <div style={{width:90}}>
+            <label style={{fontSize:10,color:'#94a3b8',display:'block',marginBottom:3}}>Tasa %</label>
+            <input type="number" step="0.1" min="0" max="100" style={{...inS,textAlign:'right',fontSize:13}}
+              value={newTasa} onChange={e=>setNewTasa(e.target.value)}/>
+          </div>
+          <button onClick={addLinea} style={{padding:'8px 14px',borderRadius:6,border:'none',background:GOLD,color:INK,cursor:'pointer',fontSize:13,fontWeight:700,whiteSpace:'nowrap'}}>Agregar</button>
+        </div>
       </div>
       <div style={{display:'flex',justifyContent:'space-between'}}>
         <button onClick={()=>setLocal({...DEFAULT_COM})} style={{padding:'8px 14px',borderRadius:6,border:'1px solid #e2e8f0',background:'none',cursor:'pointer',fontSize:13,color:'#64748b'}}>Restaurar defaults</button>
@@ -1180,12 +1232,289 @@ function EstudiantilView({months,rates,year=DEFAULT_YEAR}){
 }
 
 /* ================================================================
+   CONSOLIDADO VIEW — filtros laterales + breakdown por línea/mes
+================================================================ */
+function ConsolidadoView({months,rates,year=DEFAULT_YEAR}){
+  const [filtLinea,setFiltLinea]=useState('');
+  const [filtCanal,setFiltCanal]=useState('');
+  const [filtForma,setFiltForma]=useState('');
+  const [filtMesFrom,setFiltMesFrom]=useState(0);
+  const [filtMesTo,setFiltMesTo]=useState(11);
+
+  /* Unique values from actual data */
+  const allLineas=[...new Set(MESES.flatMap(m=>(months[m]?.ventas||[]).map(v=>v.l)))].sort();
+  const allCanales=[...new Set(MESES.flatMap(m=>(months[m]?.ventas||[]).map(v=>v.v).filter(Boolean)))].sort();
+
+  /* Apply filters */
+  const vFilt=MESES.slice(filtMesFrom,filtMesTo+1).flatMap(m=>
+    (months[m]?.ventas||[])
+      .filter(v=>{
+        if(filtLinea&&v.l!==filtLinea)return false;
+        if(filtCanal&&v.v!==filtCanal)return false;
+        if(filtForma&&v.f!==filtForma)return false;
+        return true;
+      })
+      .map(v=>({...v,mes:m}))
+  );
+
+  const totN=vFilt.length;
+  const totP=vFilt.reduce((s,v)=>s+Number(v.p||0),0);
+  const totI=vFilt.reduce((s,v)=>s+calcCom(Number(v.p||0),v.l,rates),0);
+
+  /* By línea */
+  const byLinea={};
+  vFilt.forEach(v=>{
+    if(!byLinea[v.l])byLinea[v.l]={n:0,prima:0,ing:0};
+    byLinea[v.l].n++;
+    byLinea[v.l].prima+=Number(v.p||0);
+    byLinea[v.l].ing+=calcCom(Number(v.p||0),v.l,rates);
+  });
+  const lineaEntries=Object.entries(byLinea).sort((a,b)=>b[1].prima-a[1].prima);
+
+  /* By mes */
+  const byMes=MESES.slice(filtMesFrom,filtMesTo+1).map(m=>{
+    const mv=vFilt.filter(v=>v.mes===m);
+    return{m,n:mv.length,prima:mv.reduce((s,v)=>s+Number(v.p||0),0),ing:mv.reduce((s,v)=>s+calcCom(Number(v.p||0),v.l,rates),0)};
+  }).filter(r=>r.n>0);
+
+  const hasFilt=filtLinea||filtCanal||filtForma||filtMesFrom>0||filtMesTo<11;
+  const selS={width:'100%',padding:'7px 9px',borderRadius:7,border:'1px solid #e2e8f0',background:'white',color:'#0f172a',fontSize:12,fontFamily:"'Inter',sans-serif"};
+  const th={padding:'7px 12px',fontSize:10,fontWeight:600,color:'#64748b',textAlign:'left',borderBottom:'1px solid #f1f5f9',background:'#f8fafc',textTransform:'uppercase',letterSpacing:'0.04em'};
+  const td={padding:'8px 12px',fontSize:12,borderBottom:'1px solid #f8fafc',color:'#1e293b'};
+  const tot={padding:'8px 12px',fontSize:12,fontWeight:700,borderTop:'2px solid #e2e8f0',background:'#f8fafc'};
+
+  return(
+    <div style={{padding:14,maxWidth:1400}}>
+      <div style={{display:'grid',gridTemplateColumns:'210px 1fr',gap:12,alignItems:'start'}}>
+
+        {/* ── SIDEBAR FILTROS ── */}
+        <div style={{background:'white',border:'1px solid #e8eef4',borderRadius:12,padding:16,boxShadow:'0 1px 4px rgba(0,0,0,.06)',position:'sticky',top:14}}>
+          <div style={{fontSize:10,fontWeight:700,color:'#64748b',textTransform:'uppercase',letterSpacing:'.06em',marginBottom:14,paddingBottom:10,borderBottom:'1px solid #f1f5f9'}}>
+            Filtros · {year}
+          </div>
+
+          {[
+            {label:'Línea de seguro',val:filtLinea,set:setFiltLinea,opts:allLineas,placeholder:'Todas las líneas'},
+            {label:'Canal / Referencia',val:filtCanal,set:setFiltCanal,opts:allCanales,placeholder:'Todos los canales'},
+            {label:'Forma de pago',val:filtForma,set:setFiltForma,opts:FORMAS,placeholder:'Todas'},
+          ].map(({label,val,set,opts,placeholder})=>(
+            <div key={label} style={{marginBottom:11}}>
+              <label style={{fontSize:10,color:'#94a3b8',display:'block',marginBottom:4}}>{label}</label>
+              <select style={selS} value={val} onChange={e=>set(e.target.value)}>
+                <option value="">{placeholder}</option>
+                {opts.map(o=><option key={o} value={o}>{o}</option>)}
+              </select>
+            </div>
+          ))}
+
+          <div style={{marginBottom:11}}>
+            <label style={{fontSize:10,color:'#94a3b8',display:'block',marginBottom:4}}>Desde mes</label>
+            <select style={selS} value={filtMesFrom} onChange={e=>setFiltMesFrom(Number(e.target.value))}>
+              {MESES.map((m,i)=><option key={m} value={i}>{m}</option>)}
+            </select>
+          </div>
+          <div style={{marginBottom:hasFilt?14:0}}>
+            <label style={{fontSize:10,color:'#94a3b8',display:'block',marginBottom:4}}>Hasta mes</label>
+            <select style={selS} value={filtMesTo} onChange={e=>setFiltMesTo(Number(e.target.value))}>
+              {MESES.map((m,i)=><option key={m} value={i} disabled={i<filtMesFrom}>{m}</option>)}
+            </select>
+          </div>
+
+          {hasFilt&&(
+            <>
+              <div style={{display:'flex',flexDirection:'column',gap:4,marginBottom:10}}>
+                {filtLinea&&<span style={{fontSize:10,padding:'3px 8px',borderRadius:999,background:'#eff6ff',color:'#1d4ed8',border:'1px solid #bfdbfe',fontWeight:600}}>{filtLinea}</span>}
+                {filtCanal&&<span style={{fontSize:10,padding:'3px 8px',borderRadius:999,background:'#f0fdf4',color:'#15803d',border:'1px solid #bbf7d0',fontWeight:600}}>{filtCanal}</span>}
+                {filtForma&&<span style={{fontSize:10,padding:'3px 8px',borderRadius:999,background:'#fef3c7',color:'#92400e',border:'1px solid #fde68a',fontWeight:600}}>{filtForma}</span>}
+                {(filtMesFrom>0||filtMesTo<11)&&<span style={{fontSize:10,padding:'3px 8px',borderRadius:999,background:'#fdf4ff',color:'#7e22ce',border:'1px solid #e9d5ff',fontWeight:600}}>{MESES[filtMesFrom].slice(0,3)} – {MESES[filtMesTo].slice(0,3)}</span>}
+              </div>
+              <button onClick={()=>{setFiltLinea('');setFiltCanal('');setFiltForma('');setFiltMesFrom(0);setFiltMesTo(11);}}
+                style={{width:'100%',padding:'7px',borderRadius:7,border:'none',background:'#fee2e2',color:'#dc2626',fontSize:11,fontWeight:600,cursor:'pointer'}}>
+                Limpiar filtros
+              </button>
+            </>
+          )}
+        </div>
+
+        {/* ── CONTENIDO PRINCIPAL ── */}
+        <div>
+          {/* KPIs */}
+          <div style={{display:'grid',gridTemplateColumns:'repeat(3,1fr)',gap:8,marginBottom:12}}>
+            {[
+              {l:'Pólizas',v:fmtN(totN),c:'#0f172a',acc:'#0f172a'},
+              {l:'Prima Total',v:`₡${fmtN(totP)}`,c:'#0f172a',acc:BLUE},
+              {l:'Ingresos WEB',v:`₡${fmtN(totI)}`,c:BLUE,acc:BLUE},
+            ].map(({l,v,c,acc})=>(
+              <div key={l} style={{background:'white',border:'1px solid #e8eef4',borderLeft:`4px solid ${acc}`,borderRadius:10,padding:'12px 16px',boxShadow:'0 1px 3px rgba(0,0,0,.05)'}}>
+                <div style={{fontSize:9,color:'#94a3b8',textTransform:'uppercase',letterSpacing:'.06em',marginBottom:4}}>{l}</div>
+                <div style={{fontFamily:"'Space Grotesk',sans-serif",fontSize:22,fontWeight:800,letterSpacing:'-.02em',color:c,lineHeight:1.1}}>{v}</div>
+                {filtLinea&&<div style={{fontSize:10,color:'#94a3b8',marginTop:3}}>{filtLinea}</div>}
+              </div>
+            ))}
+          </div>
+
+          {/* Empty state */}
+          {vFilt.length===0&&(
+            <div style={{background:'white',border:'1px solid #e8eef4',borderRadius:12,padding:'44px 24px',textAlign:'center',boxShadow:'0 1px 4px rgba(0,0,0,.06)'}}>
+              <div style={{fontSize:26,marginBottom:8}}>🔍</div>
+              <div style={{fontSize:14,fontWeight:600,color:'#1e293b',marginBottom:3}}>Sin resultados</div>
+              <div style={{fontSize:12,color:'#94a3b8'}}>Ajusta los filtros para ver datos consolidados</div>
+            </div>
+          )}
+
+          {/* Por línea */}
+          {lineaEntries.length>0&&(
+            <div style={{background:'white',border:'1px solid #e8eef4',borderRadius:12,overflow:'hidden',marginBottom:12,boxShadow:'0 1px 4px rgba(0,0,0,.06)'}}>
+              <div style={{padding:'11px 16px',borderBottom:'1px solid #f1f5f9',display:'flex',justifyContent:'space-between',alignItems:'center'}}>
+                <span style={{fontWeight:700,fontSize:13,color:'#0f172a'}}>Por línea de seguro</span>
+                <span style={{fontSize:10,color:'#94a3b8'}}>{lineaEntries.length} línea{lineaEntries.length!==1?'s':''} activa{lineaEntries.length!==1?'s':''}</span>
+              </div>
+              {/* Barras proporcionales */}
+              <div style={{padding:'12px 16px',borderBottom:'1px solid #f1f5f9'}}>
+                {lineaEntries.map(([linea,data])=>{
+                  const pct=totP>0?data.prima/totP*100:0;
+                  const col=LINEA_COLORS[linea]||'#6b7280';
+                  return(
+                    <div key={linea} style={{marginBottom:9}}>
+                      <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:3}}>
+                        <div style={{display:'flex',alignItems:'center',gap:7}}>
+                          <span style={{width:8,height:8,borderRadius:2,background:col,display:'inline-block',flexShrink:0}}></span>
+                          <span style={{fontSize:12,fontWeight:600,color:'#1e293b'}}>{linea}</span>
+                          <span style={{fontSize:10,color:'#94a3b8'}}>{data.n} póliza{data.n!==1?'s':''}</span>
+                        </div>
+                        <div style={{display:'flex',gap:12,fontSize:11}}>
+                          <span style={{color:'#64748b',fontFamily:'monospace'}}>₡{fmtN(data.prima)}</span>
+                          <span style={{color:BLUE,fontFamily:'monospace',fontWeight:600}}>₡{fmtN(data.ing)}</span>
+                          <span style={{color:'#94a3b8',width:30,textAlign:'right'}}>{pct.toFixed(0)}%</span>
+                        </div>
+                      </div>
+                      <div style={{height:5,background:'#f1f5f9',borderRadius:3,overflow:'hidden'}}>
+                        <div style={{width:`${pct}%`,height:'100%',background:col,borderRadius:3}}></div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+              {/* Tabla resumen */}
+              <div style={{overflowX:'auto'}}>
+                <table style={{width:'100%',borderCollapse:'collapse'}}>
+                  <thead><tr>{['Línea','Pólizas','Prima','Ingresos WEB','% Prima'].map(h=><th key={h} style={th}>{h}</th>)}</tr></thead>
+                  <tbody>
+                    {lineaEntries.map(([linea,data])=>{
+                      const col=LINEA_COLORS[linea]||'#6b7280';
+                      const pct=totP>0?data.prima/totP*100:0;
+                      return(
+                        <tr key={linea} onMouseEnter={e=>e.currentTarget.style.background='#f8fafc'} onMouseLeave={e=>e.currentTarget.style.background='transparent'}>
+                          <td style={td}><div style={{display:'flex',alignItems:'center',gap:7}}><span style={{width:8,height:8,borderRadius:2,background:col,display:'inline-block',flexShrink:0}}></span><span style={{fontWeight:600}}>{linea}</span></div></td>
+                          <td style={{...td,textAlign:'right',fontFamily:'monospace',fontWeight:700}}>{fmtN(data.n)}</td>
+                          <td style={{...td,textAlign:'right',fontFamily:'monospace'}}>₡{fmtN(data.prima)}</td>
+                          <td style={{...td,textAlign:'right',fontFamily:'monospace',color:BLUE,fontWeight:600}}>₡{fmtN(data.ing)}</td>
+                          <td style={{...td,textAlign:'right',color:'#94a3b8'}}>{pct.toFixed(1)}%</td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                  <tfoot><tr>
+                    <td style={tot}>TOTAL</td>
+                    <td style={{...tot,textAlign:'right',fontFamily:'monospace'}}>{fmtN(totN)}</td>
+                    <td style={{...tot,textAlign:'right',fontFamily:'monospace'}}>₡{fmtN(totP)}</td>
+                    <td style={{...tot,textAlign:'right',fontFamily:'monospace',color:BLUE}}>₡{fmtN(totI)}</td>
+                    <td style={tot}>100%</td>
+                  </tr></tfoot>
+                </table>
+              </div>
+            </div>
+          )}
+
+          {/* Por mes */}
+          {byMes.length>1&&(
+            <div style={{background:'white',border:'1px solid #e8eef4',borderRadius:12,overflow:'hidden',marginBottom:12,boxShadow:'0 1px 4px rgba(0,0,0,.06)'}}>
+              <div style={{padding:'11px 16px',borderBottom:'1px solid #f1f5f9'}}>
+                <span style={{fontWeight:700,fontSize:13,color:'#0f172a'}}>Por mes</span>
+              </div>
+              <div style={{padding:'12px 20px',borderBottom:'1px solid #f1f5f9'}}>
+                {(()=>{
+                  const maxP=Math.max(...byMes.map(r=>r.prima),1);
+                  return(
+                    <div style={{display:'flex',alignItems:'flex-end',gap:4,height:80}}>
+                      {byMes.map(({m,prima})=>{
+                        const h=Math.max(3,prima/maxP*62);
+                        return(
+                          <div key={m} style={{flex:1,display:'flex',flexDirection:'column',alignItems:'center',gap:2}}>
+                            <div style={{fontSize:8,color:BLUE,fontWeight:700}}>{prima>999999?`${(prima/1e6).toFixed(0)}M`:`${(prima/1e3).toFixed(0)}K`}</div>
+                            <div style={{width:'100%',height:h,background:BLUE,borderRadius:'2px 2px 0 0',opacity:.8}}></div>
+                            <div style={{fontSize:8,color:'#94a3b8',whiteSpace:'nowrap'}}>{m.slice(0,3)}</div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  );
+                })()}
+              </div>
+              <table style={{width:'100%',borderCollapse:'collapse'}}>
+                <thead><tr>{['Mes','Pólizas','Prima','Ingresos WEB'].map(h=><th key={h} style={th}>{h}</th>)}</tr></thead>
+                <tbody>
+                  {byMes.map(({m,n,prima,ing})=>(
+                    <tr key={m} onMouseEnter={e=>e.currentTarget.style.background='#f8fafc'} onMouseLeave={e=>e.currentTarget.style.background='transparent'}>
+                      <td style={{...td,fontWeight:600}}>{m}</td>
+                      <td style={{...td,textAlign:'right',fontFamily:'monospace',fontWeight:700}}>{fmtN(n)}</td>
+                      <td style={{...td,textAlign:'right',fontFamily:'monospace'}}>₡{fmtN(prima)}</td>
+                      <td style={{...td,textAlign:'right',fontFamily:'monospace',color:BLUE,fontWeight:600}}>₡{fmtN(ing)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+                <tfoot><tr>
+                  <td style={tot}>TOTAL</td>
+                  <td style={{...tot,textAlign:'right',fontFamily:'monospace'}}>{fmtN(totN)}</td>
+                  <td style={{...tot,textAlign:'right',fontFamily:'monospace'}}>₡{fmtN(totP)}</td>
+                  <td style={{...tot,textAlign:'right',fontFamily:'monospace',color:BLUE}}>₡{fmtN(totI)}</td>
+                </tr></tfoot>
+              </table>
+            </div>
+          )}
+
+          {/* Detalle pólizas (solo cuando hay filtro de línea activo) */}
+          {filtLinea&&vFilt.length>0&&(
+            <div style={{background:'white',border:'1px solid #e8eef4',borderRadius:12,overflow:'hidden',boxShadow:'0 1px 4px rgba(0,0,0,.06)'}}>
+              <div style={{padding:'11px 16px',borderBottom:'1px solid #f1f5f9',display:'flex',justifyContent:'space-between',alignItems:'center'}}>
+                <span style={{fontWeight:700,fontSize:13,color:'#0f172a'}}>Detalle · {filtLinea}</span>
+                <span style={{fontSize:10,color:'#94a3b8'}}>{totN} registros</span>
+              </div>
+              <div style={{overflowX:'auto',maxHeight:380,overflowY:'auto'}}>
+                <table style={{width:'100%',borderCollapse:'collapse'}}>
+                  <thead><tr>{['Mes','Cliente','Canal','Forma','Prima','Ingresos WEB'].map(h=><th key={h} style={{...th,position:'sticky',top:0,zIndex:1}}>{h}</th>)}</tr></thead>
+                  <tbody>
+                    {vFilt.map((v,i)=>(
+                      <tr key={v.id} style={{background:i%2===0?'white':'#fafbfc'}}
+                        onMouseEnter={e=>e.currentTarget.style.background='#f0f9ff'}
+                        onMouseLeave={e=>e.currentTarget.style.background=i%2===0?'white':'#fafbfc'}>
+                        <td style={{...td,color:'#64748b',fontSize:11,whiteSpace:'nowrap'}}>{v.mes}</td>
+                        <td style={{...td,maxWidth:0,width:'35%'}}><div style={{overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{v.c}</div></td>
+                        <td style={td}><VBadge v={v.v}/></td>
+                        <td style={{...td,color:'#64748b',fontSize:11}}>{v.f}</td>
+                        <td style={{...td,textAlign:'right',fontFamily:'monospace',fontSize:12}}>₡{fmtN(v.p)}</td>
+                        <td style={{...td,textAlign:'right',fontFamily:'monospace',fontSize:12,color:BLUE,fontWeight:600}}>₡{fmtN(calcCom(v.p,v.l,rates))}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ================================================================
    APP
 ================================================================ */
 const EXTRA_TABS=[
   {key:'MetaViajero',label:'🛫 Viajero'},
   {key:'Estudiantil',label:'🎓 Estudiantil'},
   {key:'Resumen',label:'📈 Resumen'},
+  {key:'Consolidado',label:'🔍 Consolidado'},
 ];
 
 function App(){
@@ -1439,6 +1768,7 @@ function App(){
       {tab==='Resumen'&&<ResumenView months={months} rates={rates} year={year}/>}
       {tab==='MetaViajero'&&<MetaViajeroView months={months} rates={rates} updateMonths={updateMonths} year={year}/>}
       {tab==='Estudiantil'&&<EstudiantilView months={months} rates={rates} year={year}/>}
+      {tab==='Consolidado'&&<ConsolidadoView months={months} rates={rates} year={year}/>}
       {!extraKeys.includes(tab)&&<MonthView mes={tab} data={months[tab]||{ventas:[],inv:[],tc:505}} updateMonths={updateMonths} rates={rates}/>}
       {showTasas&&<TasasModal rates={rates} onSave={saveTasas} onClose={()=>setShowTasas(false)}/>}
     </div>
