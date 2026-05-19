@@ -52,6 +52,7 @@ const INK='#0F172A';         /* slate-900 — texto */
 const NAVY='#0f2547';        /* navy — header, títulos de sección */
 const nextId=()=>Date.now().toString(36)+Math.random().toString(36).slice(2,5);
 const fmtN=(n)=>Math.round(n||0).toLocaleString('es-CR');
+const fmtDM=(s)=>{if(!s)return'';const p=String(s).split('-');return p.length===3?`${p[2]}/${p[1]}`:s;};
 const calcCom=(prima,linea,rates)=>Number(prima||0)*((rates||DEFAULT_COM)[linea]||0.15);
 const LINEA_COLORS={AUTOMOVILES:'#0369a1','RT CONSTRUCCIÓN':'#7c3aed','Viajero Asistencia':'#059669','Estudiantil Individual':'#d97706','EQUIPO CONTRATISTA':'#dc2626','INS MEDICAL':'#db2777','HOGAR COMPRENSIVO':'#0891b2',OTROS:'#6b7280'};
 /* Year handling: one set of Sheets tabs + localStorage keys per year */
@@ -765,7 +766,7 @@ function MonthView({mes,data,updateMonths,rates}){
                   <tr key={r.id} onClick={()=>setIm(r)} style={{cursor:'pointer'}}
                     onMouseEnter={e=>e.currentTarget.style.background='#f8fafc'}
                     onMouseLeave={e=>e.currentTarget.style.background='transparent'}>
-                    <td style={{...td,fontSize:11,color:'#64748b'}}>{r.fecha?.slice(5).replace('-','/')}</td>
+                    <td style={{...td,fontSize:11,color:'#64748b'}}>{fmtDM(r.fecha)}</td>
                     <td style={{...td,textAlign:'right',fontFamily:'monospace',fontSize:12}}>₡{fmtN(r.col)}</td>
                     <td style={{...td,textAlign:'right',fontFamily:'monospace',fontSize:12,color:'#7c3aed'}}>${r.usd}</td>
                   </tr>
@@ -1619,6 +1620,28 @@ function App(){
     setShowTasas(false);
   };
 
+  /* ---- SAVE NOW (manual, bypasses 800ms debounce) ---- */
+  const saveNow=useCallback(async()=>{
+    const yr=yearRef.current;
+    lsSet(lsKeys(yr).data,months);
+    lsSet(lsKeys(yr).rates,rates);
+    if(saveTimer.current){clearTimeout(saveTimer.current);saveTimer.current=null;}
+    if(!gToken){
+      handleLogin();
+      return;
+    }
+    setSyncStatus('syncing');
+    try{
+      await sheetsWrite(months,rates,yr);
+      setSyncStatus('synced');
+      setTimeout(()=>setSyncStatus(''),2500);
+    }catch(e){
+      console.error('Sheets write error',e);
+      setSyncStatus('error');
+      setTimeout(()=>setSyncStatus(''),4000);
+    }
+  },[months,rates]);
+
   const changeYear=useCallback((newYear)=>{
     if(newYear===yearRef.current) return;
     /* Flush any pending save for current year */
@@ -1734,6 +1757,9 @@ function App(){
             </select>
             <button onClick={()=>changeYear(year+1)} title="Año siguiente" style={{width:22,height:22,borderRadius:4,border:'none',background:'rgba(255,255,255,0.15)',color:'white',cursor:'pointer',fontSize:14,fontWeight:700,lineHeight:1,padding:0}}>›</button>
           </div>
+          <button onClick={saveNow} disabled={syncStatus==='syncing'} title="Guardar ahora en Google Sheets" style={{padding:'6px 14px',borderRadius:6,border:'none',background:syncStatus==='syncing'?'#94a3b8':GOLD,color:INK,cursor:syncStatus==='syncing'?'wait':'pointer',fontSize:12,fontWeight:700,boxShadow:'0 1px 3px rgba(0,0,0,.18)'}}>
+            {syncStatus==='syncing'?'⟳ Guardando...':syncStatus==='synced'?'✓ Guardado':'💾 Guardar'}
+          </button>
           <button onClick={()=>setShowTasas(true)} style={{padding:'6px 12px',borderRadius:6,border:'1px solid rgba(255,255,255,0.3)',background:'rgba(255,255,255,0.12)',color:'white',cursor:'pointer',fontSize:12,fontWeight:600}}>⚙️ Tasas</button>
           <button onClick={handleExport} disabled={exporting} style={{padding:'6px 14px',borderRadius:6,border:'1px solid rgba(255,255,255,0.3)',background:'rgba(255,255,255,0.15)',color:'white',cursor:exporting?'wait':'pointer',fontSize:12,fontWeight:700}}>
             {exporting?'⏳ Exportando...':'📥 Exportar Excel'}
